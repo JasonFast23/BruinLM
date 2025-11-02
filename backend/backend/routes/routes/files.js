@@ -4,7 +4,12 @@ const pool = require('../../db');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { processDocument, generateAIResponse, extractTextFromFile } = require('../../aiService');
+const { 
+  processDocument, 
+  generateAIResponse, 
+  generateIsolatedDocumentSummary,
+  extractTextFromFile 
+} = require('../../aiService');
 
 const router = express.Router();
 
@@ -142,44 +147,20 @@ router.post('/upload/:classId', authenticate, upload.single('file'), async (req,
     const document = result.rows[0];
     console.log(`🎉 Document ${document.id} instantly available for queries!`);
 
-    // Generate immediate AI summary (now with actual content)
+    // Generate immediate AI summary (ISOLATED - no classroom context contamination)
     let summary = '';
     try {
       if (extractedText && extractedText.length > 100) {
-        console.log(`🤖 Generating AI summary for ${document.filename}...`);
+        console.log(`🤖 Generating ISOLATED summary for ${document.filename}...`);
         console.log(`📄 Text length: ${extractedText.length} characters`);
         console.log(`📄 Text preview: ${extractedText.substring(0, 200)}...`);
         
-        const question = `Please provide a clean, comprehensive summary of this document.
-
-FORMATTING REQUIREMENTS:
-- Use **bold text** for section titles and key terms
-- Organize content with clear **bold section headings**
-- Write in clean, structured format with proper paragraph spacing
-- NO markdown headers (###, ##) - use **bold text** for headings instead
-- Start directly with content - no title or "Summary of..." header
-
-Structure your response with these sections:
-- **Key Concepts**: Main topics and definitions
-- **Important Details**: Core explanations and principles  
-- **Examples**: Practical applications or illustrations mentioned
-- **Learning Objectives**: Study goals or takeaways
-
-Keep it clean and well-organized like modern AI assistants, but with clear structure.`;
-        // Use streaming for file summaries too!
-        console.log('🌊 Generating STREAMING summary for file upload...');
+        // 🔒 FIXED: Use isolated summary generation to prevent context contamination
+        // This ensures identical summaries regardless of other documents in the classroom
+        summary = await generateIsolatedDocumentSummary(extractedText, document.filename);
         
-        // Instead of generating the summary here, we'll let the WebSocket handle it
-        // by sending a special message that triggers streaming summary generation
-        
-        // For now, generate normally but we'll enhance this
-        const aiResult = await generateAIResponse(classId, question, 'Assistant');
-        
-        console.log(`🔍 AI result:`, aiResult);
-        
-        if (aiResult?.success && aiResult.response) {
-          summary = aiResult.response;
-          console.log(`📝 Generated summary for ${document.filename}: ${summary.substring(0, 100)}...`);
+        if (summary && summary.length > 0) {
+          console.log(`📝 Generated isolated summary for ${document.filename}: ${summary.substring(0, 100)}...`);
           
           // Save summary to document_summaries table
           try {
@@ -193,13 +174,13 @@ Keep it clean and well-organized like modern AI assistants, but with clear struc
             console.error('❌ Error saving summary to database:', summaryErr);
           }
         } else {
-          console.log(`❌ AI summary generation failed:`, aiResult);
+          console.log(`❌ Isolated summary generation failed`);
         }
       } else {
         console.log(`⚠️ Insufficient text for summary generation. Length: ${extractedText?.length || 0}`);
       }
     } catch (e) {
-      console.error('❌ Error generating AI summary:', e);
+      console.error('❌ Error generating isolated summary:', e);
       console.error('Error details:', e.message, e.stack);
     }
 

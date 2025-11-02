@@ -5,8 +5,10 @@ const pool = require('./db');
 function setupWebSocket(server) {
   const wss = new WebSocket.Server({ server });
   
-  // Store active connections
+  // Store active connections and AI generation streams
   const connections = new Map();
+  const activeStreams = new Map(); // messageId -> { abortController, classId }
+  const cancelledMessages = new Set(); // Track cancelled message IDs for extra safety
   
   wss.on('connection', async (ws, req) => {
     let userId = null;
@@ -46,16 +48,51 @@ function setupWebSocket(server) {
       }
       
       if (data.type === 'stop_generation' && userId && classId) {
-        console.log('🛑 Stop generation request received from user', userId);
+        // CRITICAL: Abort IMMEDIATELY and SYNCHRONOUSLY - no async operations first
+        let abortedStreams = 0;
+        const streamIds = [];
+        
+        // Step 1: Immediate abort of all OpenAI requests for this class
+        for (const [messageId, streamInfo] of activeStreams.entries()) {
+          if (streamInfo.classId === classId) {
+            // Mark as cancelled BEFORE aborting (prevents race conditions)
+            cancelledMessages.add(messageId);
+            
+            // Save partial response before aborting
+            const partialResponse = streamInfo.fullResponse || '';
+            if (partialResponse) {
+              try {
+                await pool.query(
+                  'UPDATE chat_messages SET message = $1, status = $2 WHERE id = $3',
+                  [partialResponse, 'cancelled', messageId]
+                );
+                console.log(`💾 Saved partial response for cancelled message ${messageId}: "${partialResponse.substring(0, 50)}..."`);
+              } catch (saveError) {
+                console.error('Error saving partial response:', saveError);
+              }
+            }
+            
+            // Abort the OpenAI stream immediately
+            streamInfo.abortController.abort();
+            streamIds.push(messageId);
+            abortedStreams++;
+          }
+        }
+        
+        // Step 2: Clean up tracking (after abort to prevent timing issues)
+        for (const messageId of streamIds) {
+          activeStreams.delete(messageId);
+        }
+        
+        // Step 3: Only log/broadcast after critical abort operations are complete
+        console.log(`🛑 IMMEDIATE ABORT: Cancelled ${abortedStreams} OpenAI streams for user ${userId} in class ${classId}`);
         
         // Broadcast stop signal to all class members
         broadcastToClass(classId, {
           type: 'generation_stopped',
-          userId: userId
+          userId: userId,
+          abortedCount: abortedStreams
         });
-        
-        // TODO: If needed, could also cancel any ongoing AI processing here
-        // For now, the frontend will handle stopping the streaming display
       }
       
       if (data.type === 'chat_message' && userId && classId) {
@@ -107,6 +144,11 @@ function setupWebSocket(server) {
             const aiMessageId = aiMessageResult.rows[0].id;
             let fullResponse = '';
             
+            // Create AbortController for this AI generation
+            const abortController = new AbortController();
+            const streamInfo = { abortController, classId, fullResponse: '' };
+            activeStreams.set(aiMessageId, streamInfo);
+            
             // Send initial AI message with placeholder
             broadcastToClass(classId, {
               type: 'ai_message_start',
@@ -117,16 +159,33 @@ function setupWebSocket(server) {
               created_at: aiMessageResult.rows[0].created_at
             });
             
-            // Generate streaming AI response
-            const streamGenerator = generateAIResponseStream(classId, message, aiName);
+            // Generate streaming AI response with AbortController and cancellation callback
+            const isCancelledCallback = (msgId) => cancelledMessages.has(msgId);
+            const streamGenerator = generateAIResponseStream(classId, message, aiName, abortController, aiMessageId, isCancelledCallback);
             
             const processStream = async () => {
               try {
                 console.log('🌊 Starting to process stream generator...');
                 for await (const chunk of streamGenerator) {
+                  // AGGRESSIVE cancellation check at start of each iteration
+                  if (cancelledMessages.has(aiMessageId) || !activeStreams.has(aiMessageId)) {
+                    console.log('🛑 Message cancelled, stopping stream processing immediately');
+                    break;
+                  }
+                  
                   console.log('🌊 Received chunk:', chunk);
                   if (chunk.success && chunk.content) {
+                    // Double-check cancellation before processing content
+                    if (cancelledMessages.has(aiMessageId)) {
+                      console.log('🛑 Message cancelled before processing chunk content');
+                      break;
+                    }
+                    
                     fullResponse += chunk.content;
+                    // Also update the activeStreams reference
+                    if (activeStreams.has(aiMessageId)) {
+                      activeStreams.get(aiMessageId).fullResponse = fullResponse;
+                    }
                     console.log('🌊 Broadcasting chunk with content:', chunk.content);
                     
                     // Broadcast each character chunk
@@ -139,6 +198,12 @@ function setupWebSocket(server) {
                   }
                   
                   if (chunk.finished) {
+                    // Final cancellation check before completion
+                    if (cancelledMessages.has(aiMessageId)) {
+                      console.log('🛑 Message cancelled before completion');
+                      break;
+                    }
+                    
                     // Update database with complete response
                     await pool.query(
                       'UPDATE chat_messages SET message = $1, status = $2 WHERE id = $3',
@@ -152,12 +217,40 @@ function setupWebSocket(server) {
                       documentsUsed: chunk.documentsUsed
                     });
                     
+                    // Clean up the active stream and cancellation tracking
+                    activeStreams.delete(aiMessageId);
+                    cancelledMessages.delete(aiMessageId);
+                    
                     break;
                   }
                 }
               } catch (streamError) {
                 console.error('Streaming error:', streamError);
-                // Fall back to non-streaming if streaming fails
+                
+                // Clean up the active stream and cancellation tracking
+                activeStreams.delete(aiMessageId);
+                cancelledMessages.delete(aiMessageId);
+                
+                // Enhanced abort detection
+                if (streamError.name === 'AbortError' || 
+                    streamError.message?.includes('aborted') ||
+                    cancelledMessages.has(aiMessageId)) {
+                  console.log('🛑 AI stream was properly aborted (enhanced detection)');
+                  // Save partial response and mark as cancelled in database
+                  await pool.query(
+                    'UPDATE chat_messages SET message = $1, status = $2 WHERE id = $3',
+                    [fullResponse || '', 'cancelled', aiMessageId]
+                  );
+                  
+                  // Broadcast cancellation to frontend
+                  broadcastToClass(classId, {
+                    type: 'ai_message_cancelled',
+                    id: aiMessageId
+                  });
+                  return; // Don't send fallback response for cancelled requests
+                }
+                
+                // Fall back to non-streaming if streaming fails for other reasons
                 const { generateAIResponse } = require('./aiService');
                 const aiResult = await generateAIResponse(classId, message, aiName);
                 

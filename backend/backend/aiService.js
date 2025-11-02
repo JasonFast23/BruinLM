@@ -403,10 +403,22 @@ CRITICAL FORMATTING RULES:
 /**
  * Streaming version of generateAIResponse for character-by-character output
  */
-async function* generateAIResponseStream(classId, question, aiName = 'Andy') {
+async function* generateAIResponseStream(classId, question, aiName = 'Andy', abortController = null, messageId = null, isCancelledCallback = null) {
   try {
     // 🚀 Use optimized hierarchical retrieval (same as non-streaming)
     console.log(`🤖 Generating streaming AI response for class ${classId}`);
+    
+    // Multiple cancellation checks for ChatGPT-like behavior
+    const checkCancellation = () => {
+      return abortController?.signal.aborted || 
+             (isCancelledCallback && isCancelledCallback(messageId));
+    };
+    
+    // Check for cancellation before starting
+    if (checkCancellation()) {
+      console.log('🛑 AI generation aborted before starting');
+      return;
+    }
     
     let relevantDocs = await retrieveRelevantDocumentsOptimized(classId, question);
     
@@ -514,7 +526,13 @@ CRITICAL FORMATTING RULES:
 - Write naturally in clean paragraphs like ChatGPT
 - Use simple line breaks between paragraphs, not headers or symbols`;
 
-    // Call OpenAI with streaming enabled
+    // Final cancellation check before making OpenAI request
+    if (checkCancellation()) {
+      console.log('🛑 AI generation aborted before OpenAI request');
+      return;
+    }
+    
+    // Call OpenAI with streaming enabled and abort signal
     const stream = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -524,18 +542,41 @@ CRITICAL FORMATTING RULES:
       temperature: 0.3,
       max_tokens: 2000,
       stream: true
+    }, {
+      // CRITICAL: Pass the abort signal to the OpenAI request
+      signal: abortController?.signal,
+      // Add timeout to prevent hanging requests
+      timeout: 30000 // 30 second timeout
     });
     
-    // Yield each chunk as it arrives
+    // Yield each chunk as it arrives with ultra-aggressive cancellation checking
     for await (const chunk of stream) {
+      // TRIPLE cancellation check - before processing chunk
+      if (checkCancellation()) {
+        console.log('🛑 AI generation aborted during streaming (pre-chunk)');
+        return;
+      }
+      
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
+        // QUADRUPLE cancellation check - before yielding content
+        if (checkCancellation()) {
+          console.log('🛑 AI generation aborted before yielding chunk');
+          return;
+        }
+        
         yield {
           success: true,
           content: content,
           finished: false,
           documentsUsed: relevantDocs.map(d => d.filename)
         };
+        
+        // QUINTUPLE cancellation check - after yielding (catches rapid clicks)
+        if (checkCancellation()) {
+          console.log('🛑 AI generation aborted after yielding chunk');
+          return;
+        }
       }
     }
     
@@ -550,6 +591,15 @@ CRITICAL FORMATTING RULES:
   } catch (err) {
     console.error('Error generating streaming AI response:', err);
     
+    // Enhanced abort detection - check multiple abort conditions
+    if (err.name === 'AbortError' || 
+        err.message?.includes('aborted') || 
+        err.code === 'ABORT_ERR' ||
+        checkCancellation()) {
+      console.log('🛑 AI streaming properly aborted (enhanced detection)');
+      return; // Exit generator without yielding anything
+    }
+    
     let errorMessage = "Sorry, I encountered an error processing your request. Please try again.";
     
     if (err.code === 'insufficient_quota') {
@@ -558,11 +608,14 @@ CRITICAL FORMATTING RULES:
       errorMessage = "Sorry, the OpenAI API key is invalid or not configured. Please contact the administrator.";
     }
     
-    yield {
-      success: false,
-      content: errorMessage,
-      finished: true
-    };
+    // Only yield error if not cancelled
+    if (!checkCancellation()) {
+      yield {
+        success: false,
+        content: errorMessage,
+        finished: true
+      };
+    }
   }
 }
 
@@ -600,6 +653,47 @@ Provide a detailed summary that captures the essence and searchable concepts:`;
     console.error('Error generating document summary:', err);
     // Fallback to truncated content
     return content.substring(0, 1000) + '...';
+  }
+}
+
+/**
+ * Generate an isolated document summary for display (no classroom context contamination)
+ * This ensures identical summaries regardless of what other documents exist in the classroom
+ */
+async function generateIsolatedDocumentSummary(content, filename) {
+  try {
+    const summaryPrompt = `Please provide a clean, comprehensive summary of this document.
+
+FORMATTING REQUIREMENTS:
+- Use **bold text** for section titles and key terms
+- Organize content with clear **bold section headings**
+- Write in clean, structured format with proper paragraph spacing
+- NO markdown headers (###, ##) - use **bold text** for headings instead
+- Start directly with content - no title or "Summary of..." header
+
+Structure your response with these sections:
+- **Key Concepts**: Main topics and definitions
+- **Important Details**: Core explanations and principles  
+- **Examples**: Practical applications or illustrations mentioned
+- **Learning Objectives**: Study goals or takeaways
+
+Keep it clean and well-organized like modern AI assistants, but with clear structure.
+
+Document: ${filename}
+Content: ${content}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: summaryPrompt }],
+      temperature: 0.2, // Very low temperature for consistent summaries
+      max_tokens: 600
+    });
+
+    return response.choices[0].message.content;
+  } catch (err) {
+    console.error('Error generating isolated document summary:', err);
+    // Fallback to basic summary
+    return `**Document Summary**\n\nThis document contains ${Math.round(content.length / 5)} words of content. Unable to generate detailed summary at this time.`;
   }
 }
 
@@ -858,6 +952,7 @@ module.exports = {
   generateAIResponseStream, // New streaming function
   // New optimized functions
   generateAndStoreDocumentSummary,
+  generateIsolatedDocumentSummary, // Isolated summary without context contamination
   smartHierarchicalRetrieval,
   getAdaptiveContextStrategy,
   retrieveRelevantDocumentsOptimized

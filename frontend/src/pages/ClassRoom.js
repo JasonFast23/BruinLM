@@ -62,6 +62,7 @@ function ClassRoom() {
   const streamingQueues = useRef(new Map()); // messageId -> queue of characters
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const textareaRef = useRef(null);
   
   // Persist AI responding state across page refreshes
   const persistAIState = useCallback((responding) => {
@@ -78,14 +79,40 @@ function ClassRoom() {
     return localStorage.getItem(key) === 'true';
   }, [classId]);
 
+  // Function to clean up stale generating messages
+  const cleanupStaleMessage = useCallback(async (messageId) => {
+    try {
+      const response = await fetch(`/api/chat/cancel/${messageId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        console.log('🧹 Successfully cleaned up stale message:', messageId);
+      } else {
+        console.warn('⚠️ Failed to clean up stale message:', messageId);
+      }
+    } catch (error) {
+      console.warn('⚠️ Error cleaning up stale message:', messageId, error);
+    }
+  }, []);
+
   useEffect(() => {
+    // Clear any previous class's state when switching classes
+    setIsAIResponding(false);
+    streamingQueues.current.clear();
+    shouldBeResponding.current = false;
+    
     loadClassData();
     
-    // Restore AI responding state from localStorage
+    // Only restore AI responding state if there are actually generating messages
+    // Don't rely solely on localStorage as it can get stale
     const persistedState = getPersistedAIState();
     if (persistedState) {
-      console.log('🔄 Restoring AI responding state from localStorage');
-      setIsAIResponding(true);
+      console.log('🔄 Found persisted AI state, will verify with actual messages');
+      // State will be restored in loadClassData if there are genuinely generating messages
     }
   }, [classId, getPersistedAIState]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -105,30 +132,21 @@ function ClassRoom() {
     persistAIState(isAIResponding);
   }, [isAIResponding, classId, persistAIState]);
 
-  // Add periodic check to ensure stop button stays visible during streaming
+  // Periodic check - only restore AI responding state if there are genuinely active streaming messages
   useEffect(() => {
     const interval = setInterval(() => {
-      const hasStreamingMessages = messages.some(msg => msg.streaming === true);
-      const hasActiveQueues = streamingQueues.current.size > 0;
-      const hasQueuedCharacters = Array.from(streamingQueues.current.values())
-        .some(queue => queue.queue && queue.queue.length > 0);
-      const hasProcessingQueues = Array.from(streamingQueues.current.values())
-        .some(queue => queue.isProcessing === true);
-      
-      const shouldShowButton = hasStreamingMessages || hasActiveQueues || hasQueuedCharacters || 
-                              hasProcessingQueues || shouldBeResponding.current;
-      
-      if (shouldShowButton && !isAIResponding) {
-        console.log('🛑 STOP BUTTON: Restoring AI responding state (periodic check)', {
-          hasStreamingMessages,
-          hasActiveQueues,
-          hasQueuedCharacters,
-          hasProcessingQueues,
-          shouldBeResponding: shouldBeResponding.current
-        });
-        setIsAIResponding(true);
+      // Only check if we currently think there's no AI responding
+      if (!isAIResponding) {
+        const hasStreamingMessages = messages.some(msg => msg.streaming === true);
+        
+        // Only restore if there are actual streaming messages
+        // Don't check for processing queues here as they might be transient
+        if (hasStreamingMessages) {
+          console.log('🛑 STOP BUTTON: Restoring AI responding state (streaming messages detected)');
+          setIsAIResponding(true);
+        }
       }
-    }, 200); // Check every 200ms for more responsiveness
+    }, 1000); // Check every second (less frequent to avoid interference)
 
     return () => clearInterval(interval);
   }, [messages, isAIResponding]);
@@ -172,6 +190,8 @@ function ClassRoom() {
     return () => chatContainer.removeEventListener('scroll', handleScroll);
   }, [messages]); // Added messages dependency to recheck when messages change
 
+
+
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -180,6 +200,21 @@ function ClassRoom() {
     scrollToBottom();
     setShowScrollButton(false);
   };
+
+  // Auto-resize textarea based on content
+  const adjustTextareaHeight = useCallback(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      const maxHeight = 200; // Max height before scrolling (similar to ChatGPT)
+      textareaRef.current.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+    }
+  }, []);
+
+  // Adjust textarea height when input message changes
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [inputMessage, adjustTextareaHeight]);
 
   const loadClassData = async () => {
     try {
@@ -194,21 +229,39 @@ function ClassRoom() {
       const chatHistory = historyRes.data || [];
       
       // Check for any messages that are still in "generating" status
+      // But also clean up stale generating messages that are older than 5 minutes
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      
       const processedMessages = chatHistory.map(msg => {
         if (msg.status === 'generating' && msg.is_ai) {
-          console.log('🔄 Found generating message on load:', msg.id);
-          return { ...msg, streaming: true };
+          const msgDate = new Date(msg.created_at);
+          
+          // If generating message is older than 5 minutes, it's likely stale
+          if (msgDate < fiveMinutesAgo) {
+            console.log('🧹 Found stale generating message, cleaning up:', msg.id, msgDate);
+            // Clean up stale generating message in the background
+            cleanupStaleMessage(msg.id);
+            return { ...msg, status: 'cancelled' }; // Don't mark as streaming
+          } else {
+            console.log('🔄 Found recent generating message on load:', msg.id);
+            return { ...msg, streaming: true };
+          }
         }
         return msg;
       });
       
       setMessages(processedMessages);
       
-      // If we found any generating messages, set AI responding state
-      const hasGeneratingMessages = processedMessages.some(msg => msg.streaming === true);
-      if (hasGeneratingMessages) {
-        console.log('🔄 Found generating messages on load, setting AI responding state');
+      // Only set AI responding state if there are recent generating messages
+      const hasActiveGeneratingMessages = processedMessages.some(msg => msg.streaming === true);
+      if (hasActiveGeneratingMessages) {
+        console.log('🔄 Found active generating messages on load, setting AI responding state');
         setIsAIResponding(true);
+      } else {
+        console.log('🧹 No active generating messages, clearing AI responding state');
+        setIsAIResponding(false);
+        // Clear any stale localStorage
+        persistAIState(false);
       }
     } catch (err) {
       console.error('Error loading class data:', err);
@@ -357,6 +410,20 @@ function ClassRoom() {
           messageQueue.isProcessing = true;
           
           const processQueue = () => {
+            // CRITICAL FIX: Check if this queue was cancelled
+            if (!messageQueue.isProcessing || messageQueue.queue.length === 0) {
+              messageQueue.isProcessing = false;
+              return;
+            }
+            
+            // Check if AI generation was stopped globally (use ref to avoid stale closure)
+            if (!shouldBeResponding.current) {
+              console.log('🛑 Character animation stopped due to cancellation');
+              messageQueue.isProcessing = false;
+              messageQueue.queue = []; // Clear remaining characters
+              return;
+            }
+            
             if (messageQueue.queue.length > 0) {
               const char = messageQueue.queue.shift();
               
@@ -374,26 +441,16 @@ function ClassRoom() {
             } else {
               messageQueue.isProcessing = false;
               
-              // Check if all streaming is truly complete after this queue finishes
-              const checkAllQueuesComplete = () => {
-                const allQueuesIdle = Array.from(streamingQueues.current.values())
-                  .every(queue => !queue.isProcessing && queue.queue.length === 0);
-                
-                if (allQueuesIdle && !shouldBeResponding.current) {
-                  console.log('🛑 STOP BUTTON: All character queues complete, hiding button');
-                  setIsAIResponding(false);
-                }
-              };
-              
-              // Small delay to ensure all queues are checked
-              setTimeout(checkAllQueuesComplete, 100);
+              // Character processing complete for this message
+              // Don't automatically hide stop button here - let ai_message_complete handle it
+              // This prevents the stop button from disappearing prematurely during streaming
             }
           };
           
           processQueue();
         }
       } else if (data.type === 'ai_message_complete') {
-        // Streaming complete from backend, but keep stop button until all characters are processed
+        // Streaming complete from backend
         setMessages(prev => prev.map(msg => 
           msg.id === data.id 
             ? { 
@@ -405,31 +462,38 @@ function ClassRoom() {
             : msg
         ));
         
-        // Don't immediately hide stop button - wait for all character processing to complete
-        const checkIfFullyComplete = () => {
-          const hasActiveQueues = streamingQueues.current.size > 0;
-          const hasQueuedCharacters = Array.from(streamingQueues.current.values())
-            .some(queue => queue.queue && queue.queue.length > 0);
+        // Check if there are any remaining characters being processed for this specific message
+        const messageQueue = streamingQueues.current.get(data.id);
+        
+        const finishResponse = () => {
+          shouldBeResponding.current = false;
+          setIsAIResponding(false);
+          console.log('🛑 STOP BUTTON: Hidden - AI response complete');
           
-          if (!hasActiveQueues && !hasQueuedCharacters) {
-            // All processing truly complete
-            shouldBeResponding.current = false;
-            setIsAIResponding(false);
-            console.log('🛑 STOP BUTTON: Hidden after all characters processed');
-            
-            // Clean up the streaming queue for this message
-            if (streamingQueues.current.has(data.id)) {
-              streamingQueues.current.delete(data.id);
-            }
-          } else {
-            // Still processing characters, check again soon
-            console.log('🛑 STOP BUTTON: Still processing characters, keeping button visible');
-            setTimeout(checkIfFullyComplete, 100);
+          // Clean up the streaming queue for this message
+          if (streamingQueues.current.has(data.id)) {
+            streamingQueues.current.delete(data.id);
           }
         };
         
-        // Give a small delay to ensure queues are set up, then check
-        setTimeout(checkIfFullyComplete, 50);
+        if (messageQueue && messageQueue.isProcessing && messageQueue.queue.length > 0) {
+          // Still processing characters for this message, wait for completion
+          console.log('🛑 STOP BUTTON: Waiting for remaining characters to be processed');
+          
+          const checkQueue = () => {
+            const currentQueue = streamingQueues.current.get(data.id);
+            if (!currentQueue || (!currentQueue.isProcessing && currentQueue.queue.length === 0)) {
+              finishResponse();
+            } else {
+              setTimeout(checkQueue, 50);
+            }
+          };
+          
+          setTimeout(checkQueue, 50);
+        } else {
+          // No active character processing, hide stop button immediately
+          finishResponse();
+        }
       } else if (data.type === 'generation_stopped') {
         console.log('🛑 Generation stopped by user:', data.userId);
         
@@ -439,8 +503,31 @@ function ClassRoom() {
         // Clear all streaming queues
         streamingQueues.current.clear();
         
-        // Remove any messages that are currently streaming
-        setMessages(prev => prev.filter(msg => !msg.streaming));
+        // Preserve partial content but stop streaming (consistent behavior)
+        setMessages(prev => prev.map(msg => {
+          if (msg.streaming) {
+            return {
+              ...msg,
+              streaming: false,
+              status: 'cancelled'
+            };
+          }
+          return msg;
+        }));
+      } else if (data.type === 'ai_message_cancelled') {
+        console.log('🛑 AI message cancelled by backend:', data.id);
+        
+        // Update the specific cancelled message to preserve partial content
+        setMessages(prev => prev.map(msg => {
+          if (msg.id === data.id) {
+            return {
+              ...msg,
+              streaming: false,
+              status: 'cancelled'
+            };
+          }
+          return msg;
+        }));
       } else if (data.type === 'user_status') {
         // Handle user status updates if needed
       }
@@ -452,30 +539,90 @@ function ClassRoom() {
     
     setSocket(ws);
     
+    // Capture refs for cleanup
+    const currentQueues = streamingQueues.current;
+    const currentShouldBeResponding = shouldBeResponding;
+    
     return () => {
       if (ws) ws.close();
+      
+      // Clean up state when component unmounts or class changes
+      console.log('🧹 Cleaning up ClassRoom component state');
+      setIsAIResponding(false);
+      currentQueues.clear();
+      currentShouldBeResponding.current = false;
+      persistAIState(false);
     };
-  }, [classId]);
+  }, [classId, persistAIState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleStopGeneration = () => {
+  const handleStopGeneration = async () => {
     console.log('🛑 Stopping AI generation...');
     
-    // Stop AI response streaming
-    if (isAIResponding) {
-      setIsAIResponding(false);
-      
-      // Clear any streaming queues
-      streamingQueues.current.clear();
-      
-      // Remove any messages that are currently streaming
-      setMessages(prev => prev.filter(msg => !msg.streaming));
-      
-      // TODO: Could also send a WebSocket message to stop server-side processing
-      if (socket) {
-        socket.send(JSON.stringify({
-          type: 'stop_generation'
-        }));
+    // INSTANT UI CLEANUP - Exactly like ChatGPT
+    // 1. Hide stop button immediately
+    setIsAIResponding(false);
+    shouldBeResponding.current = false;
+    
+    // 2. CRITICAL FIX: Stop all character animation timers immediately
+    // This prevents queued characters from continuing to display
+    const activeQueues = Array.from(streamingQueues.current.values());
+    activeQueues.forEach(queue => {
+      queue.isProcessing = false; // Stop processing
+      queue.queue = []; // Clear remaining characters
+    });
+    streamingQueues.current.clear();
+    persistAIState(false);
+    
+    // 3. Find currently generating messages
+    const generatingMessages = messages.filter(msg => msg.streaming || msg.status === 'generating');
+    
+    // 4. PRESERVE partial content but stop streaming (consistent behavior)
+    setMessages(prev => prev.map(msg => {
+      if (msg.streaming || msg.status === 'generating') {
+        // Keep the partial content but mark as no longer streaming
+        return {
+          ...msg,
+          streaming: false,
+          status: 'cancelled'
+        };
       }
+      return msg;
+    }));
+    
+    // 5. Send stop signal to backend via WebSocket (faster than REST API)
+    if (socket) {
+      socket.send(JSON.stringify({
+        type: 'stop_generation'
+      }));
+    }
+    
+    // 6. Cancel each generating message on the server (backup)
+    for (const msg of generatingMessages) {
+      if (msg.id) {
+        try {
+          const response = await fetch(`/api/chat/cancel/${msg.id}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (response.ok) {
+            console.log('✅ Successfully cancelled message:', msg.id);
+          } else {
+            console.warn('⚠️ Failed to cancel message:', msg.id);
+          }
+        } catch (error) {
+          console.warn('⚠️ Error cancelling message:', msg.id, error);
+        }
+      }
+    }
+    
+    // Send WebSocket stop signal
+    if (socket) {
+      socket.send(JSON.stringify({
+        type: 'stop_generation'
+      }));
     }
     
     // Stop file upload processing (if applicable)
@@ -483,6 +630,8 @@ function ClassRoom() {
       setIsSending(false);
       setIsUploading(false);
     }
+    
+    console.log('🛑 AI generation stopped completely');
   };
 
   const handleSendMessage = async (e) => {
@@ -848,15 +997,17 @@ function ClassRoom() {
                         </div>
                         <div 
                           style={{
-                            color: colors.text.primary,
+                            color: msg.status === 'cancelled' ? colors.text.secondary : colors.text.primary,
                             fontSize: '1rem',
                             lineHeight: '1.5',
                             wordWrap: 'break-word',
-                            whiteSpace: 'pre-wrap'
+                            whiteSpace: 'pre-wrap',
+                            opacity: msg.status === 'cancelled' ? 0.7 : 1
                           }}
                           dangerouslySetInnerHTML={{
                             __html: renderMarkdown(msg.message) + 
-                              (msg.streaming ? '<span style="animation: blink 1s infinite;">|</span>' : '')
+                              (msg.streaming ? '<span style="animation: blink 1s infinite;">|</span>' : '') +
+                              (msg.status === 'cancelled' ? '<div style="font-size: 0.75rem; color: #666; margin-top: 0.5rem; font-style: italic;">Response was cancelled</div>' : '')
                           }}
                         />
                       </div>
@@ -960,29 +1111,37 @@ function ClassRoom() {
                 position: 'relative',
                 transition: 'all 0.2s ease',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-end', // Align button to bottom for multi-line
                 paddingRight: '8px',
+                paddingBottom: '6px', // Add bottom padding to position button nicely
                 boxShadow: isDarkMode 
                   ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
                   : '0 1px 3px rgba(0, 0, 0, 0.1)'
               }}>
-                <input
-                  type="text"
+                <textarea
+                  ref={textareaRef}
                   value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
+                  onChange={(e) => {
+                    setInputMessage(e.target.value);
+                    adjustTextareaHeight();
+                  }}
                   placeholder="Ask me anything about your course materials..."
                   disabled={isSending}
+                  rows={1}
                   style={{
                     width: '100%',
                     padding: '12px 16px',
-                    paddingRight: '52px',
                     background: 'transparent',
                     border: 'none',
                     outline: 'none',
                     color: colors.text.primary,
                     fontSize: '16px',
                     fontFamily: 'inherit',
-                    lineHeight: '1.5'
+                    lineHeight: '1.5',
+                    resize: 'none',
+                    minHeight: '44px',
+                    maxHeight: '200px',
+                    overflowY: 'auto'
                   }}
                   onFocus={(e) => {
                     e.target.parentElement.style.borderColor = '#2563eb';
@@ -993,6 +1152,14 @@ function ClassRoom() {
                     e.target.parentElement.style.boxShadow = isDarkMode 
                       ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
                       : '0 1px 3px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (inputMessage.trim() && !isSending) {
+                        handleSendMessage(e);
+                      }
+                    }
                   }}
                 />
                 <button
@@ -1013,8 +1180,8 @@ function ClassRoom() {
                     justifyContent: 'center',
                     transition: 'all 0.2s ease',
                     flexShrink: 0,
-                    position: 'absolute',
-                    right: '8px'
+                    marginLeft: '8px',
+                    marginBottom: '6px' // Align with textarea bottom
                   }}
                   onMouseEnter={(e) => {
                     if (!isSending && !isAIResponding && inputMessage.trim()) {
