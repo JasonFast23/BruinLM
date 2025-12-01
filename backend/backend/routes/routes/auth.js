@@ -2,11 +2,32 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../../db');
+const { authLimiter } = require('../../middleware/rateLimiter');
+const { generateToken } = require('../../middleware/csrf');
 
 const router = express.Router();
 
+// Helper function to set secure JWT cookie
+const setAuthCookie = (res, token) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isHttps = process.env.HTTPS_ENABLED === 'true' || isProduction;
+  
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: isHttps, // Only send over HTTPS in production
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+};
+
+// Get CSRF token endpoint
+router.get('/csrf-token', (req, res) => {
+  const token = generateToken(req, res);
+  res.json({ csrfToken: token });
+});
+
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   const { email, password, name } = req.body;
 
   try {
@@ -37,6 +58,10 @@ router.post('/register', async (req, res) => {
     // Create token
     const token = jwt.sign({ id: newUser.rows[0].id, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
+    // Set secure cookie
+    setAuthCookie(res, token);
+
+    // Return token in response body for backward compatibility
     res.json({ token, user: newUser.rows[0] });
   } catch (err) {
     console.error(err);
@@ -45,7 +70,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   try {
@@ -67,6 +92,10 @@ router.post('/login', async (req, res) => {
     // Create token
     const token = jwt.sign({ id: user.rows[0].id, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
+    // Set secure cookie
+    setAuthCookie(res, token);
+
+    // Return token in response body for backward compatibility
     res.json({ 
       token, 
       user: { 

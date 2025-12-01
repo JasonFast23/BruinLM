@@ -1,23 +1,8 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const pool = require('../../db');
+const { authenticate } = require('../../middleware/auth');
 
 const router = express.Router();
-
-// Helper to authenticate via Bearer token
-const authenticate = (req, res, next) => {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  const parts = auth.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: 'Unauthorized' });
-  try {
-    const payload = jwt.verify(parts[1], process.env.JWT_SECRET);
-    req.user = payload;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
 
 // Get user's classes
 router.get('/', authenticate, async (req, res) => {
