@@ -73,9 +73,14 @@ npm install
 
 4. Set up the database
 ```bash
-cd ../backend
+cd backend/backend
 node scripts/setup_tables.js
 ```
+
+**Note:** Before running the setup script, make sure to:
+- Create a `.env` file in `backend/backend/` (copy from `.env.example`)
+- Set your `DATABASE_URL`, `JWT_SECRET`, and `OPENAI_API_KEY` in the `.env` file
+- Ensure PostgreSQL database "bruinlm" exists and pgvector extension is installed
 
 ### Running the Application
 
