@@ -1,9 +1,10 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const pool = require('../../db');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { authenticate } = require('../../middleware/auth');
+const { uploadLimiter, deleteLimiter } = require('../../middleware/rateLimiter');
 const { 
   processDocument, 
   generateAIResponse, 
@@ -12,21 +13,6 @@ const {
 } = require('../../aiService');
 
 const router = express.Router();
-
-// Helper to authenticate via Bearer token
-const authenticate = (req, res, next) => {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  const parts = auth.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: 'Unauthorized' });
-  try {
-    const payload = jwt.verify(parts[1], process.env.JWT_SECRET);
-    req.user = payload;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
 
 // Set up multer for file uploads
 const uploadDir = path.join(__dirname, '../../uploads');
@@ -100,7 +86,7 @@ router.get('/class/:classId/status', authenticate, async (req, res) => {
 });
 
 // Upload a file
-router.post('/upload/:classId', authenticate, upload.single('file'), async (req, res) => {
+router.post('/upload/:classId', authenticate, uploadLimiter, upload.single('file'), async (req, res) => {
   const { classId } = req.params;
   
   if (!req.file) {
@@ -208,13 +194,17 @@ router.post('/upload/:classId', authenticate, upload.single('file'), async (req,
 });
 
 // Delete a file
-router.delete('/:fileId', authenticate, async (req, res) => {
+router.delete('/:fileId', authenticate, deleteLimiter, async (req, res) => {
   const { fileId } = req.params;
+  const userId = req.user.id;
   
   try {
-    // Get file info
+    // Get file info with class owner info
     const fileResult = await pool.query(
-      'SELECT * FROM documents WHERE id = $1',
+      `SELECT d.*, c.owner_id as class_owner_id
+       FROM documents d
+       JOIN classes c ON d.class_id = c.id
+       WHERE d.id = $1`,
       [fileId]
     );
     
@@ -225,7 +215,12 @@ router.delete('/:fileId', authenticate, async (req, res) => {
     const file = fileResult.rows[0];
 
     // Check if user is the uploader or class owner
-    // For now, allow anyone to delete
+    const isDocumentOwner = file.uploaded_by === userId;
+    const isClassOwner = file.class_owner_id === userId;
+    
+    if (!isDocumentOwner && !isClassOwner) {
+      return res.status(403).json({ error: 'Only the document owner or class owner can delete this file' });
+    }
     
     // Delete file from filesystem
     if (fs.existsSync(file.filepath)) {
