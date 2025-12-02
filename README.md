@@ -20,7 +20,7 @@ A full-stack web application that provides an AI-powered course assistant for UC
 
 ### Backend
 - Node.js with Express
-- SQLite database
+- PostgreSQL database
 - WebSocket support for real-time chat
 - AI service integration
 - File upload handling
