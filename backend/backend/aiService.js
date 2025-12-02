@@ -250,6 +250,14 @@ async function retrieveRelevantDocuments(classId, query) {
  */
 async function generateAIResponse(classId, question, aiName = 'Andy') {
   try {
+    // Get class information (name and code) for context
+    const classResult = await pool.query(
+      'SELECT code, name FROM classes WHERE id = $1',
+      [classId]
+    );
+    const className = classResult.rows[0]?.name || 'this course';
+    const classCode = classResult.rows[0]?.code || '';
+    
     // 🚀 NEW: Use optimized hierarchical retrieval
     console.log(`🤖 Generating AI response with optimized retrieval for class ${classId}`);
     
@@ -293,6 +301,7 @@ CURRENT CONTEXT:
 - Today is: ${dateString}
 - Current time: ${timeString}
 - Year: ${currentDate.getFullYear()}
+- Course: ${classCode ? `${classCode} - ${className}` : className}
 
 Core principles:
 - Be direct and concise - get straight to the point
@@ -335,7 +344,7 @@ Visual help:
 Remember: Be Claude - direct, helpful, knowledgeable across all domains, honest about limitations, and prioritize course materials when relevant.`;
 
     const userPrompt = context.length > 0 
-  ? `Course materials available:
+  ? `Course materials available for ${classCode ? `${classCode} - ${className}` : className}:
 ${context}
 
 Question: "${question}"
@@ -405,6 +414,14 @@ CRITICAL FORMATTING RULES:
  */
 async function* generateAIResponseStream(classId, question, aiName = 'Andy', abortController = null, messageId = null, isCancelledCallback = null) {
   try {
+    // Get class information (name and code) for context
+    const classResult = await pool.query(
+      'SELECT code, name FROM classes WHERE id = $1',
+      [classId]
+    );
+    const className = classResult.rows[0]?.name || 'this course';
+    const classCode = classResult.rows[0]?.code || '';
+    
     // 🚀 Use optimized hierarchical retrieval (same as non-streaming)
     console.log(`🤖 Generating streaming AI response for class ${classId}`);
     
@@ -460,6 +477,7 @@ CURRENT CONTEXT:
 - Today is: ${dateString}
 - Current time: ${timeString}
 - Year: ${currentDate.getFullYear()}
+- Course: ${classCode ? `${classCode} - ${className}` : className}
 
 Core principles:
 - Be direct and concise - get straight to the point
@@ -502,7 +520,7 @@ Visual help:
 Remember: Be Claude - direct, helpful, knowledgeable across all domains, honest about limitations, and prioritize course materials when relevant.`;
 
     const userPrompt = context.length > 0 
-      ? `Course materials available:
+      ? `Course materials available for ${classCode ? `${classCode} - ${className}` : className}:
 ${context}
 
 Question: "${question}"
