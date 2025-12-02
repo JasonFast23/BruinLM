@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { getClasses, getAvailableClasses, createClass, joinClass, getUsers, updateUserStatus } from '../services/api';
+import { getClasses, getAvailableClasses, createClass, joinClass, getUsers, updateUserStatus, search } from '../services/api';
 import { BookOpen, Plus, Users, LogOut } from 'lucide-react';
 import BruinLMLogo from '../components/BruinLMLogo';
 import ThemeToggle from '../components/ThemeToggle';
@@ -14,6 +14,8 @@ function Hub() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [newClass, setNewClass] = useState({ name: '', code: '', description: '' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState({ classes: [], documents: [] });
   const { user, logout } = useContext(AuthContext);
   const { colors, isDarkMode } = useTheme();
   const navigate = useNavigate();
@@ -291,8 +293,254 @@ function Hub() {
           overflowY: 'auto',
           background: colors.primary
         }}>
-          {/* My Classes */}
+          {/* Search Bar */}
           <section style={{ marginBottom: '2rem' }}>
+            <input
+              type="text"
+              placeholder="Search classes or documents..."
+              value={searchQuery}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSearchQuery(value);
+                if (value.length > 1) {
+                  search(value)
+                    .then(res => setSearchResults(res.data))
+                    .catch(() => setSearchResults({ classes: [], documents: [] }));
+                } else {
+                  setSearchResults({ classes: [], documents: [] });
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '0.875rem 1rem',
+                background: colors.secondary,
+                border: `1px solid ${colors.border.primary}`,
+                borderRadius: '12px',
+                fontSize: '1rem',
+                color: colors.text.primary,
+                outline: 'none',
+                transition: 'all 0.2s ease',
+                maxWidth: '600px'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#2563eb';
+                e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = colors.border.primary;
+                e.target.style.boxShadow = 'none';
+              }}
+            />
+          </section>
+
+          {/* Search Results */}
+          {searchQuery && searchQuery.length > 1 && (
+            <section style={{ marginBottom: '2rem' }}>
+              <h3 style={{ 
+                fontSize: '1.25rem', 
+                fontWeight: '600',
+                color: colors.text.primary,
+                marginBottom: '1rem'
+              }}>
+                Search Results
+              </h3>
+              
+              {searchResults.classes.length === 0 && searchResults.documents.length === 0 ? (
+                <p style={{ 
+                  color: colors.text.secondary, 
+                  fontSize: '0.95rem',
+                  padding: '1rem',
+                  background: colors.secondary,
+                  borderRadius: '8px',
+                  border: `1px solid ${colors.border.primary}`
+                }}>
+                  No results found for "{searchQuery}"
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {searchResults.classes.length > 0 && (
+                    <div>
+                      <h4 style={{ 
+                        fontSize: '1rem', 
+                        fontWeight: '600',
+                        color: colors.text.primary,
+                        marginBottom: '0.75rem'
+                      }}>
+                        Classes ({searchResults.classes.length})
+                      </h4>
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', 
+                        gap: '1rem' 
+                      }}>
+                        {searchResults.classes.map(cls => (
+                          <div
+                            key={`search-cls-${cls.id}`}
+                            onClick={() => {
+                              navigate(`/class/${cls.id}`);
+                              setSearchQuery('');
+                              setSearchResults({ classes: [], documents: [] });
+                            }}
+                            style={{
+                              background: colors.tertiary,
+                              padding: '1.5rem',
+                              borderRadius: '12px',
+                              border: `1px solid ${colors.border.primary}`,
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              boxShadow: isDarkMode 
+                                ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
+                                : '0 1px 3px rgba(0, 0, 0, 0.04)'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-2px)';
+                              e.currentTarget.style.boxShadow = isDarkMode 
+                                ? '0 8px 25px rgba(0, 0, 0, 0.5)' 
+                                : '0 8px 25px rgba(0, 0, 0, 0.1)';
+                              e.currentTarget.style.borderColor = colors.border.secondary;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = isDarkMode 
+                                ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
+                                : '0 1px 3px rgba(0, 0, 0, 0.04)';
+                              e.currentTarget.style.borderColor = colors.border.primary;
+                            }}
+                          >
+                            <div style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '1rem', 
+                              marginBottom: '1rem'
+                            }}>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '40px',
+                                height: '40px',
+                                background: '#2563eb',
+                                borderRadius: '10px'
+                              }}>
+                                <BookOpen size={20} color="white" />
+                              </div>
+                              <h3 style={{ 
+                                fontSize: '1.2rem', 
+                                fontWeight: '600',
+                                color: colors.text.primary
+                              }}>
+                                {cls.code}
+                              </h3>
+                            </div>
+                            <p style={{ 
+                              fontSize: '1rem', 
+                              color: colors.text.primary, 
+                              marginBottom: '0.5rem',
+                              fontWeight: '500'
+                            }}>
+                              {cls.name}
+                            </p>
+                            {cls.description && (
+                              <p style={{ 
+                                fontSize: '0.85rem', 
+                                color: colors.text.secondary,
+                                lineHeight: '1.4'
+                              }}>
+                                {cls.description}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {searchResults.documents.length > 0 && (
+                    <div>
+                      <h4 style={{ 
+                        fontSize: '1rem', 
+                        fontWeight: '600',
+                        color: colors.text.primary,
+                        marginBottom: '0.75rem'
+                      }}>
+                        Documents ({searchResults.documents.length})
+                      </h4>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '0.75rem' 
+                      }}>
+                        {searchResults.documents.map(doc => (
+                          <div
+                            key={`search-doc-${doc.id}`}
+                            onClick={() => {
+                              navigate(`/class/${doc.class_id}`);
+                              setSearchQuery('');
+                              setSearchResults({ classes: [], documents: [] });
+                            }}
+                            style={{
+                              padding: '1rem',
+                              background: colors.secondary,
+                              border: `1px solid ${colors.border.primary}`,
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = colors.interactive.hover;
+                              e.currentTarget.style.borderColor = colors.border.secondary;
+                              e.currentTarget.style.transform = 'translateY(-1px)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = colors.secondary;
+                              e.currentTarget.style.borderColor = colors.border.primary;
+                              e.currentTarget.style.transform = 'translateY(0)';
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <p style={{ 
+                                fontSize: '0.95rem', 
+                                fontWeight: '500',
+                                color: colors.text.primary,
+                                marginBottom: '0.25rem'
+                              }}>
+                                {doc.filename}
+                              </p>
+                              <p style={{ 
+                                fontSize: '0.85rem', 
+                                color: colors.text.secondary
+                              }}>
+                                {doc.class_code} – {doc.class_name}
+                              </p>
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '32px',
+                              height: '32px',
+                              background: '#2563eb',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.75rem'
+                            }}>
+                              →
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* My Classes */}
+          <section style={{ marginBottom: '2rem', display: searchQuery && searchQuery.length > 1 ? 'none' : 'block' }}>
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 

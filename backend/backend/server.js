@@ -7,6 +7,7 @@ const classRoutes = require('./routes/routes/classes');
 const fileRoutes = require('./routes/routes/files');
 const chatRoutes = require('./routes/routes/chat');
 const userRoutes = require('./routes/routes/users');
+const searchRoutes = require('./routes/routes/search');
 const { generalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
@@ -63,6 +64,7 @@ app.use('/api/classes', classRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/search', searchRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));

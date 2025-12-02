@@ -45,4 +45,7 @@ export const getUsers = () => api.get('/users');
 // Authenticated heartbeat to set status; backend uses token to identify user
 export const updateUserStatus = (isOnline) => api.post('/users/status', { isOnline });
 
+// Search
+export const search = (query) => api.get('/search', { params: { q: query } });
+
 export default api;
