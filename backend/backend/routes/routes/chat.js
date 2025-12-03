@@ -5,19 +5,23 @@ const { generateAIResponse, generateAIResponseStream } = require('../../aiServic
 
 const router = express.Router();
 
-// Get chat history for a class
+// Get chat history for a class (private to each user)
 router.get('/history/:classId', authenticate, async (req, res) => {
   const { classId } = req.params;
+  const userId = req.user.id;
   try {
-    // Get regular chat messages
+    // Get regular chat messages for THIS USER's private chat room
     const chatResult = await pool.query(
       `SELECT cm.*, u.name as user_name 
        FROM chat_messages cm 
        LEFT JOIN users u ON cm.user_id = u.id 
-       WHERE cm.class_id = $1 AND cm.status != 'cancelled' AND cm.status != 'generating'
+       WHERE cm.class_id = $1 
+         AND cm.chat_owner_id = $2 
+         AND cm.status != 'cancelled' 
+         AND cm.status != 'generating'
        ORDER BY cm.created_at ASC 
        LIMIT 100`,
-      [classId]
+      [classId, userId]
     );
     
     // Get document summaries for this class
@@ -55,14 +59,15 @@ router.get('/history/:classId', authenticate, async (req, res) => {
 router.post('/message/:classId', authenticate, async (req, res) => {
   const { classId } = req.params;
   const { message, isAI } = req.body;
+  const userId = req.user.id;
   
-  console.log('📝 Message received:', { classId, message, isAI, userId: req.user?.id });
+  console.log('📝 Message received:', { classId, message, isAI, userId });
   
   try {
-    // Store the user's message (or AI response if isAI flag is set)
+    // Store the user's message in their private chat room
     const result = await pool.query(
-      'INSERT INTO chat_messages (class_id, user_id, message, is_ai) VALUES ($1, $2, $3, $4) RETURNING *',
-      [classId, isAI ? null : req.user.id, message, isAI || false]
+      'INSERT INTO chat_messages (class_id, user_id, message, is_ai, chat_owner_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [classId, isAI ? null : userId, message, isAI || false, userId]
     );
     
     res.json(result.rows[0]);
@@ -94,10 +99,10 @@ router.post('/ai/:classId', authenticate, async (req, res) => {
     
     console.log('🤖 Generating AI response with name:', aiName);
     
-    // Create a placeholder message with 'generating' status first
+    // Create a placeholder message with 'generating' status first in the user's private chat room
     const placeholderResult = await pool.query(
-      'INSERT INTO chat_messages (class_id, user_id, message, is_ai, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [classId, null, 'Generating response...', true, 'generating']
+      'INSERT INTO chat_messages (class_id, user_id, message, is_ai, status, chat_owner_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [classId, null, 'Generating response...', true, 'generating', req.user.id]
     );
     
     const messageId = placeholderResult.rows[0].id;
@@ -173,10 +178,10 @@ router.get('/ai-stream/:classId', authenticate, async (req, res) => {
     
     console.log('🌊 Generating streaming AI response with name:', aiName);
     
-    // Create a placeholder message with 'generating' status first
+    // Create a placeholder message with 'generating' status first in the user's private chat room
     const placeholderResult = await pool.query(
-      'INSERT INTO chat_messages (class_id, user_id, message, is_ai, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [classId, null, '', true, 'generating']
+      'INSERT INTO chat_messages (class_id, user_id, message, is_ai, status, chat_owner_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [classId, null, '', true, 'generating', req.user.id]
     );
     
     const messageId = placeholderResult.rows[0].id;

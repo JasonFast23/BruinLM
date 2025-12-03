@@ -52,9 +52,9 @@ function setupWebSocket(server) {
         let abortedStreams = 0;
         const streamIds = [];
         
-        // Step 1: Immediate abort of all OpenAI requests for this class
+        // Step 1: Immediate abort of all OpenAI requests for this user's chat room in this class
         for (const [messageId, streamInfo] of activeStreams.entries()) {
-          if (streamInfo.classId === classId) {
+          if (streamInfo.classId === classId && streamInfo.userId === userId) {
             // Mark as cancelled BEFORE aborting (prevents race conditions)
             cancelledMessages.add(messageId);
             
@@ -87,12 +87,12 @@ function setupWebSocket(server) {
         // Step 3: Only log/broadcast after critical abort operations are complete
         console.log(`🛑 IMMEDIATE ABORT: Cancelled ${abortedStreams} OpenAI streams for user ${userId} in class ${classId}`);
         
-        // Broadcast stop signal to all class members
-        broadcastToClass(classId, {
+        // Send stop signal only to this user (their private chat room)
+        ws.send(JSON.stringify({
           type: 'generation_stopped',
           userId: userId,
           abortedCount: abortedStreams
-        });
+        }));
       }
       
       if (data.type === 'chat_message' && userId && classId) {
@@ -101,10 +101,10 @@ function setupWebSocket(server) {
         console.log('🚨 WEBSOCKET: Chat message received!', { message, userId, classId });
         
         try {
-          // Store message in database
+          // Store message in database in the user's private chat room
           const result = await pool.query(
-            'INSERT INTO chat_messages (class_id, user_id, message) VALUES ($1, $2, $3) RETURNING *',
-            [classId, userId, message]
+            'INSERT INTO chat_messages (class_id, user_id, message, chat_owner_id) VALUES ($1, $2, $3, $4) RETURNING *',
+            [classId, userId, message, userId]
           );
           
           // Get user info
@@ -135,10 +135,10 @@ function setupWebSocket(server) {
             
             const aiName = classResult.rows[0]?.ai_name || 'Assistant';
             
-            // Create placeholder AI message
+            // Create placeholder AI message in the user's private chat room
             const aiMessageResult = await pool.query(
-              'INSERT INTO chat_messages (class_id, user_id, message, is_ai, status) VALUES ($1, $2, $3, true, $4) RETURNING *',
-              [classId, null, '', 'generating']
+              'INSERT INTO chat_messages (class_id, user_id, message, is_ai, status, chat_owner_id) VALUES ($1, $2, $3, true, $4, $5) RETURNING *',
+              [classId, null, '', 'generating', userId]
             );
             
             const aiMessageId = aiMessageResult.rows[0].id;
@@ -146,18 +146,18 @@ function setupWebSocket(server) {
             
             // Create AbortController for this AI generation
             const abortController = new AbortController();
-            const streamInfo = { abortController, classId, fullResponse: '' };
+            const streamInfo = { abortController, classId, userId, fullResponse: '' };
             activeStreams.set(aiMessageId, streamInfo);
             
-            // Send initial AI message with placeholder
-            broadcastToClass(classId, {
+            // Send initial AI message with placeholder only to this user
+            ws.send(JSON.stringify({
               type: 'ai_message_start',
               id: aiMessageId,
               user_name: aiName,
               is_ai: true,
               message: '',
               created_at: aiMessageResult.rows[0].created_at
-            });
+            }));
             
             // Generate streaming AI response with AbortController and cancellation callback
             const isCancelledCallback = (msgId) => cancelledMessages.has(msgId);
@@ -188,13 +188,13 @@ function setupWebSocket(server) {
                     }
                     console.log('🌊 Broadcasting chunk with content:', chunk.content);
                     
-                    // Broadcast each character chunk
-                    broadcastToClass(classId, {
+                    // Send each character chunk only to this user
+                    ws.send(JSON.stringify({
                       type: 'ai_message_chunk',
                       id: aiMessageId,
                       content: chunk.content,
                       finished: chunk.finished
-                    });
+                    }));
                   }
                   
                   if (chunk.finished) {
@@ -210,12 +210,12 @@ function setupWebSocket(server) {
                       [fullResponse, 'active', aiMessageId]
                     );
                     
-                    // Send completion signal
-                    broadcastToClass(classId, {
+                    // Send completion signal only to this user
+                    ws.send(JSON.stringify({
                       type: 'ai_message_complete',
                       id: aiMessageId,
                       documentsUsed: chunk.documentsUsed
-                    });
+                    }));
                     
                     // Clean up the active stream and cancellation tracking
                     activeStreams.delete(aiMessageId);
@@ -242,11 +242,11 @@ function setupWebSocket(server) {
                     [fullResponse || '', 'cancelled', aiMessageId]
                   );
                   
-                  // Broadcast cancellation to frontend
-                  broadcastToClass(classId, {
+                  // Broadcast cancellation to frontend (only to this user)
+                  ws.send(JSON.stringify({
                     type: 'ai_message_cancelled',
                     id: aiMessageId
-                  });
+                  }));
                   return; // Don't send fallback response for cancelled requests
                 }
                 
@@ -260,13 +260,13 @@ function setupWebSocket(server) {
                     [aiResult.response, 'active', aiMessageId]
                   );
                   
-                  broadcastToClass(classId, {
+                  ws.send(JSON.stringify({
                     type: 'ai_message_complete',
                     id: aiMessageId,
                     documentsUsed: aiResult.documentsUsed,
                     content: aiResult.response,
                     fallback: true
-                  });
+                  }));
                 }
               }
             };
@@ -279,11 +279,11 @@ function setupWebSocket(server) {
           
           console.log('🚨 WEBSOCKET: About to broadcast user message and start AI streaming');
           
-          // Broadcast message to class
-          broadcastToClass(classId, {
+          // Send message only to this user (private chat room)
+          ws.send(JSON.stringify({
             type: 'chat_message',
             ...chatMessage
-          });
+          }));
         } catch (err) {
           console.error('Error handling message:', err);
         }

@@ -154,6 +154,13 @@ router.post('/upload/:classId', authenticate, upload.single('file'), async (req,
                VALUES ($1, $2)`,
               [document.id, summary]
             );
+            
+            // Mark document as summarized to prevent duplicate summary generation
+            await pool.query(
+              'UPDATE documents SET summary_generated = TRUE, summary_generated_at = NOW() WHERE id = $1',
+              [document.id]
+            );
+            
             console.log(`💾 Summary saved to database for document ${document.id}`);
           } catch (summaryErr) {
             console.error('❌ Error saving summary to database:', summaryErr);
@@ -189,6 +196,84 @@ router.post('/upload/:classId', authenticate, upload.single('file'), async (req,
       details: err.message,
       code: err.code 
     });
+  }
+});
+
+// View/download a file (accepts token in query for iframe compatibility)
+router.get('/:fileId/view', async (req, res) => {
+  const { fileId } = req.params;
+  const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
+  
+  try {
+    // Verify token
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    const jwt = require('jsonwebtoken');
+    let userId;
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      userId = payload.id;
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    
+    // Get file info
+    const fileResult = await pool.query(
+      `SELECT d.*, c.id as class_id
+       FROM documents d
+       JOIN classes c ON d.class_id = c.id
+       WHERE d.id = $1`,
+      [fileId]
+    );
+    
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const file = fileResult.rows[0];
+
+    // Check if user is a member of the class
+    const memberCheck = await pool.query(
+      'SELECT id FROM class_members WHERE class_id = $1 AND user_id = $2',
+      [file.class_id, userId]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'You must be a member of this class to view files' });
+    }
+    
+    // Check if file exists
+    if (!fs.existsSync(file.filepath)) {
+      return res.status(404).json({ error: 'File not found on server' });
+    }
+
+    // Set content type based on file extension
+    const ext = path.extname(file.filename).toLowerCase();
+    let contentType = 'application/octet-stream';
+    
+    if (ext === '.pdf') {
+      contentType = 'application/pdf';
+    } else if (ext === '.txt') {
+      contentType = 'text/plain';
+    } else if (ext === '.doc') {
+      contentType = 'application/msword';
+    } else if (ext === '.docx') {
+      contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+
+    // Set headers
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${file.filename}"`);
+    
+    // Stream the file
+    const fileStream = fs.createReadStream(file.filepath);
+    fileStream.pipe(res);
+    
+  } catch (err) {
+    console.error('Failed to serve file:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

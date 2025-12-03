@@ -746,14 +746,25 @@ Key topics:`;
  */
 async function generateAndStoreDocumentSummary(documentId) {
   try {
+    // Check if summary already exists in the table
+    const existingCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM document_summaries WHERE document_id = $1',
+      [documentId]
+    );
+    
+    if (parseInt(existingCheck.rows[0].count) > 0) {
+      console.log(`⏭️  Summary already exists for document ${documentId}, skipping`);
+      return { success: false, message: 'Summary already exists' };
+    }
+    
     // Get document info and content
     const docResult = await pool.query(
-      'SELECT * FROM documents WHERE id = $1 AND summary_generated = FALSE',
+      'SELECT * FROM documents WHERE id = $1',
       [documentId]
     );
 
     if (docResult.rows.length === 0) {
-      return { success: false, message: 'Document not found or summary already generated' };
+      return { success: false, message: 'Document not found' };
     }
 
     const doc = docResult.rows[0];

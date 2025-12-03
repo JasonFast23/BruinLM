@@ -15,10 +15,30 @@ function Hub() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [newClass, setNewClass] = useState({ name: '', code: '', description: '' });
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState({ classes: [], documents: [] });
+  const [searchResults, setSearchResults] = useState({ classes: [], documents: [], documentContent: [], chatMessages: [] });
   const { user, logout } = useContext(AuthContext);
   const { colors, isDarkMode } = useTheme();
   const navigate = useNavigate();
+
+  // Helper function to highlight search terms
+  const highlightText = (text, query) => {
+    if (!text || !query) return text;
+    
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return parts.map((part, index) => 
+      part.toLowerCase() === query.toLowerCase() ? (
+        <mark key={index} style={{ 
+          backgroundColor: '#fef08a', 
+          color: '#854d0e',
+          fontWeight: '600',
+          padding: '0.1rem 0.2rem',
+          borderRadius: '2px'
+        }}>
+          {part}
+        </mark>
+      ) : part
+    );
+  };
 
   useEffect(() => {
     loadData();
@@ -297,7 +317,7 @@ function Hub() {
           <section style={{ marginBottom: '2rem' }}>
             <input
               type="text"
-              placeholder="Search classes or documents..."
+              placeholder="Search classes, documents, content, and chat history..."
               value={searchQuery}
               onChange={(e) => {
                 const value = e.target.value;
@@ -305,9 +325,9 @@ function Hub() {
                 if (value.length > 1) {
                   search(value)
                     .then(res => setSearchResults(res.data))
-                    .catch(() => setSearchResults({ classes: [], documents: [] }));
+                    .catch(() => setSearchResults({ classes: [], documents: [], documentContent: [], chatMessages: [] }));
                 } else {
-                  setSearchResults({ classes: [], documents: [] });
+                  setSearchResults({ classes: [], documents: [], documentContent: [], chatMessages: [] });
                 }
               }}
               style={{
@@ -319,8 +339,7 @@ function Hub() {
                 fontSize: '1rem',
                 color: colors.text.primary,
                 outline: 'none',
-                transition: 'all 0.2s ease',
-                maxWidth: '600px'
+                transition: 'all 0.2s ease'
               }}
               onFocus={(e) => {
                 e.target.style.borderColor = '#2563eb';
@@ -345,7 +364,10 @@ function Hub() {
                 Search Results
               </h3>
               
-              {searchResults.classes.length === 0 && searchResults.documents.length === 0 ? (
+              {searchResults.classes.length === 0 && 
+               searchResults.documents.length === 0 && 
+               searchResults.documentContent.length === 0 && 
+               searchResults.chatMessages.length === 0 ? (
                 <p style={{ 
                   color: colors.text.secondary, 
                   fontSize: '0.95rem',
@@ -393,7 +415,7 @@ function Hub() {
                                 if (isMember) {
                                   navigate(`/class/${cls.id}`);
                                   setSearchQuery('');
-                                  setSearchResults({ classes: [], documents: [] });
+                                  setSearchResults({ classes: [], documents: [], documentContent: [], chatMessages: [] });
                                 }
                               }}
                               onMouseEnter={(e) => {
@@ -443,7 +465,7 @@ function Hub() {
                                     fontWeight: '600',
                                     color: colors.text.primary
                                   }}>
-                                    {cls.code}
+                                    {highlightText(cls.code, searchQuery)}
                                   </h3>
                                 </div>
                                 {!isMember && (
@@ -480,7 +502,7 @@ function Hub() {
                                 marginBottom: '0.5rem',
                                 fontWeight: '500'
                               }}>
-                                {cls.name}
+                                {highlightText(cls.name, searchQuery)}
                               </p>
                               {cls.description && (
                                 <p style={{ 
@@ -488,7 +510,7 @@ function Hub() {
                                   color: colors.text.secondary,
                                   lineHeight: '1.4'
                                 }}>
-                                  {cls.description}
+                                  {highlightText(cls.description, searchQuery)}
                                 </p>
                               )}
                             </div>
@@ -550,13 +572,13 @@ function Hub() {
                                 color: colors.text.primary,
                                 marginBottom: '0.25rem'
                               }}>
-                                {doc.filename}
+                                {highlightText(doc.filename, searchQuery)}
                               </p>
                               <p style={{ 
                                 fontSize: '0.85rem', 
                                 color: colors.text.secondary
                               }}>
-                                {doc.class_code} – {doc.class_name}
+                                {highlightText(`${doc.class_code} – ${doc.class_name}`, searchQuery)}
                               </p>
                             </div>
                             <div style={{
@@ -572,6 +594,159 @@ function Hub() {
                             }}>
                               →
                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {searchResults.documentContent.length > 0 && (
+                    <div>
+                      <h4 style={{ 
+                        fontSize: '1rem', 
+                        fontWeight: '600',
+                        color: colors.text.primary,
+                        marginBottom: '0.75rem'
+                      }}>
+                        Document Content ({searchResults.documentContent.length})
+                      </h4>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '0.75rem' 
+                      }}>
+                        {searchResults.documentContent.map(doc => (
+                          <div
+                            key={`search-content-${doc.id}`}
+                            onClick={() => {
+                              navigate(`/class/${doc.class_id}`);
+                              setSearchQuery('');
+                              setSearchResults({ classes: [], documents: [], documentContent: [], chatMessages: [] });
+                            }}
+                            style={{
+                              padding: '1rem',
+                              background: colors.secondary,
+                              border: `1px solid ${colors.border.primary}`,
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = colors.interactive.hover;
+                              e.currentTarget.style.borderColor = colors.border.secondary;
+                              e.currentTarget.style.transform = 'translateY(-1px)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = colors.secondary;
+                              e.currentTarget.style.borderColor = colors.border.primary;
+                              e.currentTarget.style.transform = 'translateY(0)';
+                            }}
+                          >
+                            <div style={{ marginBottom: '0.5rem' }}>
+                              <p style={{ 
+                                fontSize: '0.95rem', 
+                                fontWeight: '500',
+                                color: colors.text.primary,
+                                marginBottom: '0.25rem'
+                              }}>
+                                {highlightText(doc.filename, searchQuery)}
+                              </p>
+                              <p style={{ 
+                                fontSize: '0.8rem', 
+                                color: colors.text.secondary
+                              }}>
+                                {highlightText(`${doc.class_code} – ${doc.class_name}`, searchQuery)}
+                              </p>
+                            </div>
+                            {doc.content_preview && (
+                              <p style={{ 
+                                fontSize: '0.85rem', 
+                                color: colors.text.secondary,
+                                fontStyle: 'italic',
+                                padding: '0.5rem',
+                                background: colors.tertiary,
+                                borderRadius: '4px',
+                                borderLeft: `3px solid #2563eb`
+                              }}>
+                                ...{highlightText(doc.content_preview, searchQuery)}...
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {searchResults.chatMessages.length > 0 && (
+                    <div>
+                      <h4 style={{ 
+                        fontSize: '1rem', 
+                        fontWeight: '600',
+                        color: colors.text.primary,
+                        marginBottom: '0.75rem'
+                      }}>
+                        Chat History ({searchResults.chatMessages.length})
+                      </h4>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '0.75rem' 
+                      }}>
+                        {searchResults.chatMessages.map(msg => (
+                          <div
+                            key={`search-msg-${msg.id}`}
+                            onClick={() => {
+                              navigate(`/class/${msg.class_id}`);
+                              setSearchQuery('');
+                              setSearchResults({ classes: [], documents: [], documentContent: [], chatMessages: [] });
+                            }}
+                            style={{
+                              padding: '1rem',
+                              background: colors.secondary,
+                              border: `1px solid ${colors.border.primary}`,
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = colors.interactive.hover;
+                              e.currentTarget.style.borderColor = colors.border.secondary;
+                              e.currentTarget.style.transform = 'translateY(-1px)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = colors.secondary;
+                              e.currentTarget.style.borderColor = colors.border.primary;
+                              e.currentTarget.style.transform = 'translateY(0)';
+                            }}
+                          >
+                            <div style={{ marginBottom: '0.5rem' }}>
+                              <p style={{ 
+                                fontSize: '0.8rem', 
+                                color: colors.text.secondary,
+                                marginBottom: '0.25rem'
+                              }}>
+                                {msg.class_code} – {msg.class_name}
+                              </p>
+                              <p style={{ 
+                                fontSize: '0.75rem', 
+                                color: colors.text.tertiary
+                              }}>
+                                {msg.is_ai ? 'AI Response' : msg.user_name} • {new Date(msg.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            {msg.message_preview && (
+                              <p style={{ 
+                                fontSize: '0.85rem', 
+                                color: colors.text.secondary,
+                                fontStyle: 'italic',
+                                padding: '0.5rem',
+                                background: colors.tertiary,
+                                borderRadius: '4px',
+                                borderLeft: msg.is_ai ? '3px solid #10b981' : '3px solid #3b82f6'
+                              }}>
+                                ...{highlightText(msg.message_preview, searchQuery)}...
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>
