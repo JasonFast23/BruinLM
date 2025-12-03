@@ -99,3 +99,6 @@ Thumbs.db
 
 # DynamoDB Local files
 .dynamodb/
+
+# no pdfs (uploads folder stays empty)
+*.pdf
