@@ -106,11 +106,7 @@ The application will be available at `http://localhost:3000`
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-# BruinLM Sequence Diagram
-
-## Behavioral View - RAG-Powered AI Chat Interaction Flow
-
-## Alternative Flow: Streaming Response
+## BruinLM Sequence Diagram - Behavioral View
 
 For real-time character-by-character streaming (using Server-Sent Events):
 
