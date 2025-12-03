@@ -236,6 +236,98 @@ The application will be available at `http://localhost:3000`
 │             │   │              │   │Express       │   │              │   │              │
 └─────────────┘   └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
 ```
+# BruinLM Entity-Relationship Diagram (ERD) - Database Structure
+
+```
+┌─────────────────┐
+│     users       │
+├─────────────────┤
+│ PK: id          │
+│     email       │
+│     password    │
+│     name        │
+│     created_at  │
+└─────────────────┘
+        │
+        │ 1
+        │
+        ├──────────────────────────────────────┐
+        │                                      │
+        │ N                                    │ 1
+        │                                      │
+┌───────▼──────────┐                  ┌────────▼────────┐
+│  user_status     │                  │    classes      │
+├──────────────────┤                  ├─────────────────┤
+│ PK: id           │                  │ PK: id          │
+│ FK: user_id      │                  │     code        │
+│     is_online    │                  │     name        │
+│     last_seen    │                  │     description │
+└──────────────────┘                  │     ai_name     │
+                                      │ FK: owner_id    │
+                                      │     created_at  │
+                                      └─────────────────┘
+                                               │
+                                               │ 1
+                    ┌──────────────────────────┼──────────────────────────┐
+                    │                          │                          │
+                    │ N                        │ N                        │ N
+                    │                          │                          │
+        ┌───────────▼─────────┐    ┌───────────▼──────────┐   ┌──────────▼─────────┐
+        │   class_members     │    │     documents        │   │   chat_messages    │
+        ├─────────────────────┤    ├──────────────────────┤   ├────────────────────┤
+        │ PK: id              │    │ PK: id               │   │ PK: id             │
+        │ FK: class_id        │    │ FK: class_id         │   │ FK: class_id       │
+        │ FK: user_id         │    │     filename         │   │ FK: user_id        │
+        │     joined_at       │    │     filepath         │   │     message        │
+        └─────────────────────┘    │     content          │   │     is_ai          │
+                │                  │ FK: uploaded_by      │   │     status         │
+                │ N                │     uploaded_at      │   │     created_at     │
+                │                  │     processing_status│   └────────────────────┘
+                │                  │     chunks_count     │
+                │ 1                │     processed_at     │
+                │                  │     last_error       │
+        ┌───────▼──────────┐       │     summary_generated│
+        │     users        │       │     summary_generated│
+        │   (reference)    │       │          _at         │
+        └──────────────────┘       └──────────────────────┘
+                                            │
+                                            │ 1
+                          ┌─────────────────┴──────────────────┐
+                          │                                    │
+                          │ N                                  │ N
+              ┌───────────▼──────────────┐       ┌─────────────▼─────────────┐
+              │   document_chunks        │       │   document_summaries      │
+              ├──────────────────────────┤       ├───────────────────────────┤
+              │ PK: id                   │       │ PK: id                    │
+              │ FK: document_id          │       │ FK: document_id           │
+              │     chunk_index          │       │     summary               │
+              │     content              │       │     summary_embedding     │
+              │     embedding (vector)   │       │     key_topics[]          │
+              └──────────────────────────┘       │     created_at            │
+                                                 │     updated_at            │
+                                                 └───────────────────────────┘
+
+
+┌─────────────────────────────┐
+│   retrieval_analytics       │
+├─────────────────────────────┤
+│ PK: id                      │
+│ FK: class_id                │
+│     query_text              │
+│     documents_retrieved[]   │
+│     response_quality_score  │
+│     retrieval_time_ms       │
+│     created_at              │
+└─────────────────────────────┘
+        │
+        │ N
+        │
+        │ 1
+        │
+┌───────▼─────────┐
+│    classes      │
+│  (reference)    │
+└─────────────────┘
 
 ## Notes
 
