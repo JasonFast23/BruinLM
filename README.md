@@ -108,8 +108,6 @@ The application will be available at `http://localhost:3000`
 
 ## BruinLM Sequence Diagram - Behavioral View
 
-For real-time character-by-character streaming (using Server-Sent Events):
-
 ```
 ┌─────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
 │user: User   │   │frontend:React│   │backend:      │   │db:PostgreSQL │   │openai:OpenAI │
