@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS classes (
   code VARCHAR(100) NOT NULL,
   name VARCHAR(255) NOT NULL,
   description TEXT,
+  ai_name VARCHAR(255) DEFAULT 'Andy',
   owner_id INTEGER REFERENCES users(id),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
