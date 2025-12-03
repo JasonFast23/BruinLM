@@ -373,84 +373,127 @@ function Hub() {
                         gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', 
                         gap: '1rem' 
                       }}>
-                        {searchResults.classes.map(cls => (
-                          <div
-                            key={`search-cls-${cls.id}`}
-                            onClick={() => {
-                              navigate(`/class/${cls.id}`);
-                              setSearchQuery('');
-                              setSearchResults({ classes: [], documents: [] });
-                            }}
-                            style={{
-                              background: colors.tertiary,
-                              padding: '1.5rem',
-                              borderRadius: '12px',
-                              border: `1px solid ${colors.border.primary}`,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                              boxShadow: isDarkMode 
-                                ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
-                                : '0 1px 3px rgba(0, 0, 0, 0.04)'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = 'translateY(-2px)';
-                              e.currentTarget.style.boxShadow = isDarkMode 
-                                ? '0 8px 25px rgba(0, 0, 0, 0.5)' 
-                                : '0 8px 25px rgba(0, 0, 0, 0.1)';
-                              e.currentTarget.style.borderColor = colors.border.secondary;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = 'translateY(0)';
-                              e.currentTarget.style.boxShadow = isDarkMode 
-                                ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
-                                : '0 1px 3px rgba(0, 0, 0, 0.04)';
-                              e.currentTarget.style.borderColor = colors.border.primary;
-                            }}
-                          >
-                            <div style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '1rem', 
-                              marginBottom: '1rem'
-                            }}>
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: '40px',
-                                height: '40px',
-                                background: '#2563eb',
-                                borderRadius: '10px'
+                        {searchResults.classes.map(cls => {
+                          const isMember = cls.is_member || myClasses.find(mc => mc.id === cls.id);
+                          return (
+                            <div
+                              key={`search-cls-${cls.id}`}
+                              style={{
+                                background: colors.tertiary,
+                                padding: '1.5rem',
+                                borderRadius: '12px',
+                                border: `1px solid ${colors.border.primary}`,
+                                cursor: isMember ? 'pointer' : 'default',
+                                transition: 'all 0.2s ease',
+                                boxShadow: isDarkMode 
+                                  ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
+                                  : '0 1px 3px rgba(0, 0, 0, 0.04)'
+                              }}
+                              onClick={() => {
+                                if (isMember) {
+                                  navigate(`/class/${cls.id}`);
+                                  setSearchQuery('');
+                                  setSearchResults({ classes: [], documents: [] });
+                                }
+                              }}
+                              onMouseEnter={(e) => {
+                                if (isMember) {
+                                  e.currentTarget.style.transform = 'translateY(-2px)';
+                                  e.currentTarget.style.boxShadow = isDarkMode 
+                                    ? '0 8px 25px rgba(0, 0, 0, 0.5)' 
+                                    : '0 8px 25px rgba(0, 0, 0, 0.1)';
+                                  e.currentTarget.style.borderColor = colors.border.secondary;
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (isMember) {
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                  e.currentTarget.style.boxShadow = isDarkMode 
+                                    ? '0 1px 3px rgba(0, 0, 0, 0.3)' 
+                                    : '0 1px 3px rgba(0, 0, 0, 0.04)';
+                                  e.currentTarget.style.borderColor = colors.border.primary;
+                                }
+                              }}
+                            >
+                              <div style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'space-between',
+                                marginBottom: '1rem'
                               }}>
-                                <BookOpen size={20} color="white" />
+                                <div style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '1rem',
+                                  flex: 1
+                                }}>
+                                  <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '40px',
+                                    height: '40px',
+                                    background: '#2563eb',
+                                    borderRadius: '10px'
+                                  }}>
+                                    <BookOpen size={20} color="white" />
+                                  </div>
+                                  <h3 style={{ 
+                                    fontSize: '1.2rem', 
+                                    fontWeight: '600',
+                                    color: colors.text.primary
+                                  }}>
+                                    {cls.code}
+                                  </h3>
+                                </div>
+                                {!isMember && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleJoinClass(cls.id);
+                                    }}
+                                    style={{
+                                      padding: '0.5rem 1rem',
+                                      background: '#10b981',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      cursor: 'pointer',
+                                      fontWeight: '500',
+                                      fontSize: '0.85rem',
+                                      transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = '#059669';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = '#10b981';
+                                    }}
+                                  >
+                                    Join
+                                  </button>
+                                )}
                               </div>
-                              <h3 style={{ 
-                                fontSize: '1.2rem', 
-                                fontWeight: '600',
-                                color: colors.text.primary
-                              }}>
-                                {cls.code}
-                              </h3>
-                            </div>
-                            <p style={{ 
-                              fontSize: '1rem', 
-                              color: colors.text.primary, 
-                              marginBottom: '0.5rem',
-                              fontWeight: '500'
-                            }}>
-                              {cls.name}
-                            </p>
-                            {cls.description && (
                               <p style={{ 
-                                fontSize: '0.85rem', 
-                                color: colors.text.secondary,
-                                lineHeight: '1.4'
+                                fontSize: '1rem', 
+                                color: colors.text.primary, 
+                                marginBottom: '0.5rem',
+                                fontWeight: '500'
                               }}>
-                                {cls.description}
+                                {cls.name}
                               </p>
-                            )}
-                          </div>
-                        ))}
+                              {cls.description && (
+                                <p style={{ 
+                                  fontSize: '0.85rem', 
+                                  color: colors.text.secondary,
+                                  lineHeight: '1.4'
+                                }}>
+                                  {cls.description}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

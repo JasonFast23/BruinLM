@@ -132,9 +132,24 @@ router.post('/:id/join', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Class not found' });
     }
 
+    // Check if user is already a member
+    const memberCheck = await pool.query(
+      'SELECT id FROM class_members WHERE class_id = $1 AND user_id = $2',
+      [classId, req.user.id]
+    );
+    
+    if (memberCheck.rows.length > 0) {
+      // User is already a member, return class details
+      const result = await pool.query(
+        'SELECT id, code, name, description FROM classes WHERE id = $1',
+        [classId]
+      );
+      return res.json(result.rows[0]);
+    }
+
     // Add user as a member
     await pool.query(
-      'INSERT INTO class_members (class_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      'INSERT INTO class_members (class_id, user_id) VALUES ($1, $2)',
       [classId, req.user.id]
     );
 
@@ -146,6 +161,15 @@ router.post('/:id/join', authenticate, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Failed to join class', err);
+    // Handle unique constraint violation gracefully
+    if (err.code === '23505') {
+      // User is already a member
+      const result = await pool.query(
+        'SELECT id, code, name, description FROM classes WHERE id = $1',
+        [classId]
+      );
+      return res.json(result.rows[0]);
+    }
     res.status(500).json({ error: 'Server error' });
   }
 });

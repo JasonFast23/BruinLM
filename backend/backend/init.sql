@@ -23,6 +23,15 @@ CREATE TABLE IF NOT EXISTS classes (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Class membership table
+CREATE TABLE IF NOT EXISTS class_members (
+  id SERIAL PRIMARY KEY,
+  class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(class_id, user_id)
+);
+
 -- Enable pgvector for embeddings (safe if already installed)
 CREATE EXTENSION IF NOT EXISTS vector;
 

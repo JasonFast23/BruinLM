@@ -2,7 +2,6 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../../db');
-const { authLimiter } = require('../../middleware/rateLimiter');
 const { generateToken } = require('../../middleware/csrf');
 const { authenticate } = require('../../middleware/auth');
 
@@ -28,7 +27,7 @@ router.get('/csrf-token', (req, res) => {
 });
 
 // Register
-router.post('/register', authLimiter, async (req, res) => {
+router.post('/register', async (req, res) => {
   const { email, password, name } = req.body;
 
   try {
@@ -71,7 +70,7 @@ router.post('/register', authLimiter, async (req, res) => {
 });
 
 // Login
-router.post('/login', authLimiter, async (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {

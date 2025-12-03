@@ -17,14 +17,14 @@ router.get('/', authenticate, async (req, res) => {
     const searchPattern = `%${q.trim()}%`;
     const userId = req.user.id;
     
-    // Find matching classes that the user is a member of
+    // Find matching classes - include ALL classes (both member and non-member)
+    // This allows users to discover classes they can join
     const classesResult = await pool.query(
-      `SELECT c.id, c.code, c.name, c.description
+      `SELECT c.id, c.code, c.name, c.description,
+              EXISTS(SELECT 1 FROM class_members cm WHERE cm.class_id = c.id AND cm.user_id = $1) as is_member
        FROM classes c
-       INNER JOIN class_members cm ON c.id = cm.class_id
-       WHERE cm.user_id = $1
-         AND (c.name ILIKE $2 OR c.code ILIKE $2)
-       ORDER BY c.code ASC`,
+       WHERE c.name ILIKE $2 OR c.code ILIKE $2
+       ORDER BY is_member DESC, c.code ASC`,
       [userId, searchPattern]
     );
     

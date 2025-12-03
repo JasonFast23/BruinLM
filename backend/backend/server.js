@@ -8,7 +8,6 @@ const fileRoutes = require('./routes/routes/files');
 const chatRoutes = require('./routes/routes/chat');
 const userRoutes = require('./routes/routes/users');
 const searchRoutes = require('./routes/routes/search');
-const { generalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
@@ -20,9 +19,6 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json({ limit: '50mb' })); // Increase JSON payload limit
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Apply general rate limiting to all routes
-app.use('/api', generalLimiter);
 
 // HTTPS enforcement in production
 if (process.env.NODE_ENV === 'production') {

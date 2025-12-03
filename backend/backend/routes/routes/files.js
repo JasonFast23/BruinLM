@@ -4,7 +4,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { authenticate } = require('../../middleware/auth');
-const { uploadLimiter, deleteLimiter } = require('../../middleware/rateLimiter');
 const { 
   processDocument, 
   generateAIResponse, 
@@ -86,7 +85,7 @@ router.get('/class/:classId/status', authenticate, async (req, res) => {
 });
 
 // Upload a file
-router.post('/upload/:classId', authenticate, uploadLimiter, upload.single('file'), async (req, res) => {
+router.post('/upload/:classId', authenticate, upload.single('file'), async (req, res) => {
   const { classId } = req.params;
   
   if (!req.file) {
@@ -194,7 +193,7 @@ router.post('/upload/:classId', authenticate, uploadLimiter, upload.single('file
 });
 
 // Delete a file
-router.delete('/:fileId', authenticate, deleteLimiter, async (req, res) => {
+router.delete('/:fileId', authenticate, async (req, res) => {
   const { fileId } = req.params;
   const userId = req.user.id;
   
