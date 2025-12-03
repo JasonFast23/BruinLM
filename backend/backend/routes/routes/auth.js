@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../../db');
 const { authLimiter } = require('../../middleware/rateLimiter');
 const { generateToken } = require('../../middleware/csrf');
+const { authenticate } = require('../../middleware/auth');
 
 const router = express.Router();
 
@@ -107,6 +108,42 @@ router.post('/login', authLimiter, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Logout
+router.post('/logout', async (req, res) => {
+  try {
+    // Try to get user ID from token if available
+    let token = null;
+    const auth = req.headers.authorization;
+    if (auth) {
+      const parts = auth.split(' ');
+      if (parts.length === 2 && parts[0] === 'Bearer') {
+        token = parts[1];
+      }
+    }
+    
+    // If token exists and is valid, mark user as offline
+    if (token) {
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        await pool.query('UPDATE user_status SET is_online = $1, last_seen = NOW() WHERE user_id = $2', [false, payload.id]);
+      } catch (err) {
+        // Invalid token is okay, we're logging out anyway
+        console.log('Token validation failed during logout (expected):', err.message);
+      }
+    }
+    
+    // Clear the auth cookie regardless
+    res.clearCookie('token');
+    
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    console.error('Logout error:', err);
+    // Even if there's an error, allow logout
+    res.clearCookie('token');
+    res.json({ message: 'Logged out successfully' });
   }
 });
 

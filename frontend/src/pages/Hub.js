@@ -24,11 +24,11 @@ function Hub() {
     loadData();
     
     // Send immediate heartbeat to mark as online
-    updateUserStatus(true);
+    updateUserStatus(true).catch(() => {});
     
     // Send periodic heartbeats every 10 seconds to maintain online status
     const heartbeatInterval = setInterval(() => {
-      updateUserStatus(true);
+      updateUserStatus(true).catch(() => {});
     }, 10000);
     
     // Much more frequent user list updates for sharper status changes
@@ -37,8 +37,8 @@ function Hub() {
     return () => {
       clearInterval(heartbeatInterval);
       clearInterval(usersInterval);
-      // Mark as offline when leaving
-      updateUserStatus(false);
+      // Mark as offline when leaving (ignore errors if already logged out)
+      updateUserStatus(false).catch(() => {});
     };
   }, []);
 

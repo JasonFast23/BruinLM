@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
-import { login as apiLogin, register as apiRegister, updateUserStatus } from '../services/api';
+import { login as apiLogin, register as apiRegister, logout as apiLogout, updateUserStatus } from '../services/api';
 import api from '../services/api';
 
 export const AuthContext = createContext();
@@ -41,7 +41,8 @@ export const AuthProvider = ({ children }) => {
     // Set user offline on window close
     const handleBeforeUnload = () => {
       if (token) {
-        updateUserStatus(false);
+        // Fire and forget - don't wait for response
+        updateUserStatus(false).catch(() => {});
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -115,7 +116,14 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    await updateUserStatus(false);
+    try {
+      // Call the backend logout endpoint
+      await apiLogout();
+    } catch (err) {
+      console.error('Logout error:', err);
+      // Continue with local cleanup even if API call fails
+    }
+    // Clear local state
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);
