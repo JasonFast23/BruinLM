@@ -236,7 +236,7 @@ The application will be available at `http://localhost:3000`
 │             │   │              │   │Express       │   │              │   │              │
 └─────────────┘   └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
 ```
-# BruinLM Entity-Relationship Diagram (ERD) - Database Structure
+## BruinLM Entity-Relationship Diagram (ERD) - Database Structure
 
 ```
 ┌─────────────────┐
@@ -329,14 +329,8 @@ The application will be available at `http://localhost:3000`
 │  (reference)    │
 └─────────────────┘
 
-## Notes
 
-- All synchronous calls shown with solid arrows and execution bars
-- Asynchronous streaming shown with repeated message flows
-- Database operations use prepared statements to prevent SQL injection
-- Vector similarity uses cosine distance for semantic search
-- The diagram represents the actual implementation in `chat.js` and `aiService.js`
-
+```
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
