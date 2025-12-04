@@ -81,8 +81,8 @@ setupWebSocket(server);
 // Ensure database schema is up to date before starting server
 ensureSchema()
   .then(() => {
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
     });
   })
   .catch(err => {
@@ -91,4 +91,4 @@ ensureSchema()
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT} (with schema warnings)`);
     });
-  });
+});

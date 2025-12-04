@@ -82,6 +82,48 @@ async function run() {
       .map(s => s.trim())
       .filter(s => s.length > 0 && !s.match(/^\s*$/));
     
+    // Check if chat_messages table exists and ensure it has chat_owner_id column
+    // This handles cases where the table was created with an older schema
+    try {
+      const tableCheck = await client.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+          AND table_name = 'chat_messages'
+      `);
+      
+      if (tableCheck.rows.length > 0) {
+        // Table exists, check if column exists
+        const columnCheck = await client.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'chat_messages' 
+            AND column_name = 'chat_owner_id'
+        `);
+        
+        if (columnCheck.rows.length === 0) {
+          console.log('📝 Detected existing chat_messages table without chat_owner_id column');
+          console.log('   Adding missing column...');
+          
+          await client.query(`
+            ALTER TABLE chat_messages 
+            ADD COLUMN chat_owner_id INTEGER REFERENCES users(id)
+          `);
+          
+          // Migrate existing user messages
+          const userMsgResult = await client.query(`
+            UPDATE chat_messages 
+            SET chat_owner_id = user_id 
+            WHERE chat_owner_id IS NULL AND user_id IS NOT NULL
+          `);
+          console.log(`   ✅ Added chat_owner_id column and migrated ${userMsgResult.rowCount} messages`);
+        }
+      }
+    } catch (schemaErr) {
+      // If this fails, continue anyway - the table might not exist yet
+      console.log('ℹ️  Schema check skipped (table may not exist yet)');
+    }
+    
     // Execute each statement
     for (const statement of statements) {
       try {
@@ -111,6 +153,33 @@ async function run() {
         // Some errors are acceptable (e.g., table already exists)
         if (err.code === '42P07' || err.message.includes('already exists')) {
           console.log(`ℹ️  ${err.message.split('\n')[0]}`);
+        } else if (err.code === '42703' && err.message.includes('chat_owner_id')) {
+          // Handle missing chat_owner_id column when creating index
+          console.warn('⚠️  Warning: chat_owner_id column missing from chat_messages table.');
+          console.warn('   This usually means the table was created with an older schema.');
+          console.warn('   Adding the missing column...');
+          
+          try {
+            // Add the missing column
+            await client.query(`
+              ALTER TABLE chat_messages 
+              ADD COLUMN IF NOT EXISTS chat_owner_id INTEGER REFERENCES users(id)
+            `);
+            
+            // Migrate existing user messages
+            const userMsgResult = await client.query(`
+              UPDATE chat_messages 
+              SET chat_owner_id = user_id 
+              WHERE chat_owner_id IS NULL AND user_id IS NOT NULL
+            `);
+            console.log(`   ✅ Added chat_owner_id column and migrated ${userMsgResult.rowCount} messages`);
+            
+            // Now retry the index creation
+            await client.query(statement);
+          } catch (migrateErr) {
+            console.error(`   ❌ Failed to add column: ${migrateErr.message}`);
+            throw migrateErr;
+          }
         } else {
           console.error(`Error executing statement: ${err.message}`);
           console.error(`Statement: ${statement.substring(0, 100)}...`);
