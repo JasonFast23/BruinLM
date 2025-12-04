@@ -102,3 +102,8 @@ Thumbs.db
 
 # no pdfs (uploads folder stays empty)
 *.pdf
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
