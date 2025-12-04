@@ -1,52 +1,95 @@
+/**
+ * API service module for making HTTP requests to the backend
+ * Handles authentication, file uploads, chat, and class management
+ */
+
 import axios from 'axios';
 
 const API_URL = 'http://localhost:5001/api';
 
+/**
+ * Axios instance configured with base URL
+ */
 const api = axios.create({
   baseURL: API_URL,
 });
 
-// Add token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+/**
+ * Request interceptor to automatically add JWT token to all API requests
+ */
+api.interceptors.request.use((requestConfig) => {
+  const authToken = localStorage.getItem('token');
+  if (authToken) {
+    requestConfig.headers.Authorization = `Bearer ${authToken}`;
   }
-  return config;
+  return requestConfig;
 });
 
-// Auth
-export const register = (data) => api.post('/auth/register', data);
-export const login = (data) => api.post('/auth/login', data);
+// ========== Authentication API Functions ==========
+
+/** Register a new user account */
+export const register = (userData) => api.post('/auth/register', userData);
+
+/** Log in an existing user */
+export const login = (credentials) => api.post('/auth/login', credentials);
+
+/** Log out the current user */
 export const logout = () => api.post('/auth/logout');
 
-// Classes
+// ========== Class Management API Functions ==========
+
+/** Get all classes for the current user */
 export const getClasses = () => api.get('/classes');
+
+/** Get classes available for the user to join */
 export const getAvailableClasses = () => api.get('/classes/available');
-export const createClass = (data) => api.post('/classes', data);
+
+/** Create a new class */
+export const createClass = (classData) => api.post('/classes', classData);
+
+/** Join a class by ID */
 export const joinClass = (classId) => api.post(`/classes/${classId}/join`);
+
+/** Get detailed information about a specific class */
 export const getClassDetails = (classId) => api.get(`/classes/${classId}`);
 
-// Files
-export const uploadFile = (classId, formData) => 
+// ========== File Management API Functions ==========
+
+/** Upload a file to a class */
+export const uploadFile = (classId, formData) =>
   api.post(`/files/upload/${classId}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   });
+
+/** Get all files for a specific class */
 export const getClassFiles = (classId) => api.get(`/files/class/${classId}`);
+
+/** Get indexing status for files in a class */
 export const getIndexStatus = (classId) => api.get(`/files/class/${classId}/status`);
+
+/** Delete a file by ID */
 export const deleteFile = (fileId) => api.delete(`/files/${fileId}`);
 
-// Chat
-export const sendMessage = (classId, message) => 
-  api.post(`/chat/message/${classId}`, { message });
+// ========== Chat API Functions ==========
+
+/** Send a chat message to a class */
+export const sendMessage = (classId, messageContent) =>
+  api.post(`/chat/message/${classId}`, { message: messageContent });
+
+/** Get chat history for a specific class */
 export const getChatHistory = (classId) => api.get(`/chat/history/${classId}`);
 
-// Users
+// ========== User API Functions ==========
+
+/** Get list of all users */
 export const getUsers = () => api.get('/users');
-// Authenticated heartbeat to set status; backend uses token to identify user
+
+/** Update user online status (authenticated heartbeat) */
 export const updateUserStatus = (isOnline) => api.post('/users/status', { isOnline });
 
-// Search
-export const search = (query) => api.get('/search', { params: { q: query } });
+// ========== Search API Functions ==========
+
+/** Search across classes, files, and chat messages */
+export const search = (searchQuery) => api.get('/search', { params: { q: searchQuery } });
 
 export default api;

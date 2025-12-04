@@ -7,16 +7,26 @@ const { authenticate } = require('../../middleware/auth');
 
 const router = express.Router();
 
-// Helper function to set secure JWT cookie
-const setAuthCookie = (res, token) => {
+// Constants
+const TOKEN_EXPIRATION_DAYS = 7;
+const TOKEN_EXPIRATION_MS = TOKEN_EXPIRATION_DAYS * 24 * 60 * 60 * 1000;
+const BCRYPT_SALT_ROUNDS = 10;
+
+/**
+ * Helper function to set secure JWT cookie in HTTP response
+ *
+ * @param {Object} response - Express response object
+ * @param {string} token - JWT token to set in cookie
+ */
+const setAuthCookie = (response, token) => {
   const isProduction = process.env.NODE_ENV === 'production';
   const isHttps = process.env.HTTPS_ENABLED === 'true' || isProduction;
-  
-  res.cookie('token', token, {
+
+  response.cookie('token', token, {
     httpOnly: true,
     secure: isHttps, // Only send over HTTPS in production
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: TOKEN_EXPIRATION_MS,
   });
 };
 
@@ -26,86 +36,116 @@ router.get('/csrf-token', (req, res) => {
   res.json({ csrfToken: token });
 });
 
-// Register
+/**
+ * Register a new user with UCLA email validation
+ */
 router.post('/register', async (req, res) => {
   const { email, password, name } = req.body;
 
   try {
-    // Validate UCLA email
+    // Validate UCLA email domain
     if (!email.endsWith('@ucla.edu') && !email.endsWith('@g.ucla.edu')) {
       return res.status(400).json({ error: 'Please use a valid UCLA email' });
     }
 
-    // Check if user exists
-    const userExists = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (userExists.rows.length > 0) {
+    // Check if user already exists
+    const existingUserQuery = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (existingUserQuery.rows.length > 0) {
       return res.status(400).json({ error: 'User already exists' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    // Hash password with bcrypt
+    const passwordSalt = await bcrypt.genSalt(BCRYPT_SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(password, passwordSalt);
 
-    // Create user
-    const newUser = await pool.query(
+    // Create new user in database
+    const newUserQuery = await pool.query(
       'INSERT INTO users (email, password, name) VALUES ($1, $2, $3) RETURNING id, email, name',
       [email, hashedPassword, name]
     );
 
-  // Create user status (set online true and last_seen now)
-  await pool.query('INSERT INTO user_status (user_id, is_online, last_seen) VALUES ($1, $2, NOW())', [newUser.rows[0].id, true]);
+    const newUser = newUserQuery.rows[0];
 
-    // Create token
-    const token = jwt.sign({ id: newUser.rows[0].id, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Initialize user status as online
+    await pool.query(
+      'INSERT INTO user_status (user_id, is_online, last_seen) VALUES ($1, $2, NOW())',
+      [newUser.id, true]
+    );
+
+    // Generate JWT token
+    const authToken = jwt.sign(
+      { id: newUser.id, email },
+      process.env.JWT_SECRET,
+      { expiresIn: `${TOKEN_EXPIRATION_DAYS}d` }
+    );
 
     // Set secure cookie
-    setAuthCookie(res, token);
+    setAuthCookie(res, authToken);
 
     // Return token in response body for backward compatibility
-    res.json({ token, user: newUser.rows[0] });
-  } catch (err) {
-    console.error(err);
+    res.json({ token: authToken, user: newUser });
+  } catch (error) {
+    console.error('Registration error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Login
+/**
+ * Authenticate and log in an existing user
+ */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // Check if user exists
-    const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (user.rows.length === 0) {
+    // Query for user by email
+    const userQuery = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userQuery.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    // Validate password
-    const validPassword = await bcrypt.compare(password, user.rows[0].password);
-    if (!validPassword) {
+    const user = userQuery.rows[0];
+
+    // Verify password matches stored hash
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-  // Update online status
-  await pool.query('UPDATE user_status SET is_online = $1, last_seen = NOW() WHERE user_id = $2', [true, user.rows[0].id]);
+    // Update user status to online
+    await pool.query(
+      'UPDATE user_status SET is_online = $1, last_seen = NOW() WHERE user_id = $2',
+      [true, user.id]
+    );
 
-    // Create token
-    const token = jwt.sign({ id: user.rows[0].id, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Generate JWT token
+    const authToken = jwt.sign(
+      { id: user.id, email },
+      process.env.JWT_SECRET,
+      { expiresIn: `${TOKEN_EXPIRATION_DAYS}d` }
+    );
 
     // Set secure cookie
-    setAuthCookie(res, token);
+    setAuthCookie(res, authToken);
 
-    // Return token in response body for backward compatibility
-    res.json({ 
-      token, 
-      user: { 
-        id: user.rows[0].id, 
-        email: user.rows[0].email, 
-        name: user.rows[0].name 
-      } 
+    // Return token and user info in response body for backward compatibility
+    res.json({
+      token: authToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name
+      }
     });
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

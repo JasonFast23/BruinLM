@@ -7,6 +7,20 @@ const path = require('path');
 const pdfParse = require('pdf-parse');
 console.log('✅ PDF-parse loaded successfully');
 
+// Constants for configuration
+const DEFAULT_DOCUMENT_LIMIT = 5;
+const DEFAULT_CHARS_PER_DOCUMENT = 3000;
+const DEFAULT_CHUNK_SIZE = 1000;
+const DEFAULT_CHUNK_OVERLAP = 200;
+const EMBEDDING_TEXT_LIMIT = 8000;
+const EMBEDDING_RATE_LIMIT_DELAY_MS = 100;
+const AI_TEMPERATURE = 0.3;
+const AI_MAX_TOKENS = 2000;
+const SUMMARY_MAX_TOKENS = 400;
+const TOPICS_MAX_TOKENS = 100;
+const ISOLATED_SUMMARY_MAX_TOKENS = 600;
+const ISOLATED_SUMMARY_TEMPERATURE = 0.2;
+
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -15,10 +29,15 @@ const openai = new OpenAI({
 /**
  * On-demand document text: use stored content if present, otherwise extract from file now.
  * This enables instant Q&A without waiting for indexing.
+ *
+ * @param {number} classId - The ID of the class to fetch documents for
+ * @param {number} limit - Maximum number of documents to retrieve
+ * @param {number} charactersPerDocument - Maximum characters to include from each document
+ * @returns {Promise<Array>} Array of document objects with filename and content
  */
-async function getDocumentsTextOnDemand(classId, limit = 5, perDocChars = 3000) {
+async function getDocumentsTextOnDemand(classId, limit = DEFAULT_DOCUMENT_LIMIT, charactersPerDocument = DEFAULT_CHARS_PER_DOCUMENT) {
   try {
-    const res = await pool.query(
+    const queryResult = await pool.query(
       `SELECT id, filename, filepath, content
        FROM documents
        WHERE class_id = $1
@@ -26,95 +45,130 @@ async function getDocumentsTextOnDemand(classId, limit = 5, perDocChars = 3000) 
        LIMIT $2`,
       [classId, limit]
     );
-    const out = [];
-    for (const row of res.rows) {
-      let text = row.content;
-      if (!text || text.trim().length < 10) {
-        // Extract on-demand from the source file (should be rare now with instant processing)
-        try { 
+
+    const documents = [];
+    for (const row of queryResult.rows) {
+      let textContent = row.content;
+
+      // Extract on-demand from the source file if content is missing or too short
+      if (!textContent || textContent.trim().length < 10) {
+        try {
           console.log(`⚡ On-demand extraction for ${row.filename}`);
-          text = await extractTextFromFile(row.filepath); 
-        } catch (e) { 
+          textContent = await extractTextFromFile(row.filepath);
+        } catch (extractionError) {
           console.log(`⚠️ Could not extract text for ${row.filename}`);
-          text = ''; 
+          textContent = '';
         }
       }
-      if (text && text.trim().length > 0) {
-        out.push({ filename: row.filename, content: text.slice(0, perDocChars) });
+
+      // Add document if it has meaningful content
+      if (textContent && textContent.trim().length > 0) {
+        documents.push({
+          filename: row.filename,
+          content: textContent.slice(0, charactersPerDocument)
+        });
       }
-      if (out.length >= limit) break;
+
+      // Stop if we've reached the limit
+      if (documents.length >= limit) break;
     }
-    console.log(`📚 Retrieved ${out.length} documents instantly for AI query`);
-    return out;
-  } catch (e) {
-    console.error('Error getting on-demand document text:', e);
+
+    console.log(`📚 Retrieved ${documents.length} documents instantly for AI query`);
+    return documents;
+  } catch (error) {
+    console.error('Error getting on-demand document text:', error);
     return [];
   }
 }
 
 /**
- * Extract text content from uploaded file
+ * Extract text content from uploaded file based on file type
+ *
+ * @param {string} filepath - Path to the file to extract text from
+ * @returns {Promise<string>} Extracted text content
  */
 async function extractTextFromFile(filepath) {
-  const ext = path.extname(filepath).toLowerCase();
-  
+  const fileExtension = path.extname(filepath).toLowerCase();
+  const PREVIEW_LENGTH = 200;
+  const MIN_PREVIEW_LENGTH = 100;
+
   try {
-    if (ext === '.txt') {
+    // Handle text files
+    if (fileExtension === '.txt') {
       return fs.readFileSync(filepath, 'utf-8');
-    } else if (ext === '.pdf') {
-      const dataBuffer = fs.readFileSync(filepath);
-      console.log(`🔍 PDF buffer size: ${dataBuffer.length} bytes`);
-      
-      const result = await pdfParse(dataBuffer);
-      const extractedText = result.text || '';
+    }
+
+    // Handle PDF files
+    if (fileExtension === '.pdf') {
+      const pdfDataBuffer = fs.readFileSync(filepath);
+      console.log(`🔍 PDF buffer size: ${pdfDataBuffer.length} bytes`);
+
+      const parseResult = await pdfParse(pdfDataBuffer);
+      const extractedText = parseResult.text || '';
       console.log(`✅ PDF text extracted: ${extractedText.length} characters`);
-      
-      if (extractedText.length > 100) {
-        console.log(`📄 Preview: ${extractedText.substring(0, 200)}...`);
+
+      // Show preview for debugging if text is substantial
+      if (extractedText.length > MIN_PREVIEW_LENGTH) {
+        console.log(`📄 Preview: ${extractedText.substring(0, PREVIEW_LENGTH)}...`);
       }
-      
+
       return extractedText;
-    } else if (ext === '.doc' || ext === '.docx') {
+    }
+
+    // Handle Word documents (future implementation)
+    if (fileExtension === '.doc' || fileExtension === '.docx') {
       // Optional: integrate 'mammoth' for DOCX extraction in future
       return '';
     }
+
+    // Unsupported file type
     return '';
-  } catch (err) {
-    console.error('Error extracting text:', err);
+  } catch (error) {
+    console.error('Error extracting text:', error);
     return '';
   }
 }
 
 /**
- * Generate embedding for text using OpenAI
+ * Generate embedding for text using OpenAI's embedding model
+ *
+ * @param {string} text - Text to generate embedding for
+ * @returns {Promise<Array|null>} Embedding vector or null if generation fails
  */
 async function generateEmbedding(text) {
   try {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: text.substring(0, 8000) // Limit to ~8000 chars for embedding
+      input: text.substring(0, EMBEDDING_TEXT_LIMIT)
     });
     return response.data[0].embedding;
-  } catch (err) {
-    console.error('Error generating embedding:', err);
+  } catch (error) {
+    console.error('Error generating embedding:', error);
     return null;
   }
 }
 
 /**
- * Split text into chunks for better RAG
+ * Split text into overlapping chunks for better RAG (Retrieval-Augmented Generation)
+ *
+ * @param {string} text - Text to split into chunks
+ * @param {number} chunkSize - Size of each chunk in characters
+ * @param {number} overlapSize - Number of overlapping characters between chunks for context continuity
+ * @returns {Array<string>} Array of text chunks
  */
-function splitIntoChunks(text, chunkSize = 1000, overlap = 200) {
+function splitIntoChunks(text, chunkSize = DEFAULT_CHUNK_SIZE, overlapSize = DEFAULT_CHUNK_OVERLAP) {
   const chunks = [];
-  let start = 0;
-  
-  while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    const chunk = text.substring(start, end);
+  let startPosition = 0;
+
+  while (startPosition < text.length) {
+    const endPosition = Math.min(startPosition + chunkSize, text.length);
+    const chunk = text.substring(startPosition, endPosition);
     chunks.push(chunk);
-    start += chunkSize - overlap; // Overlap for context continuity
+
+    // Move start position forward with overlap for context continuity
+    startPosition += chunkSize - overlapSize;
   }
-  
+
   return chunks;
 }
 
