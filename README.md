@@ -71,7 +71,15 @@ cd ../frontend
 npm install
 ```
 
-4. Set up the database
+4. Install E2E testing dependencies (Playwright)
+```bash
+cd ..
+npm install
+```
+
+This installs Playwright and its dependencies in the root directory for end-to-end testing.
+
+5. Set up the database
 ```bash
 cd backend/backend
 node scripts/setup_tables.js
@@ -97,6 +105,29 @@ npm start
 ```
 
 The application will be available at `http://localhost:3000`
+
+## Running End-to-End Tests
+
+This project uses Playwright for automated end-to-end testing. To run the tests:
+
+1. Make sure both backend and frontend servers are running (see "Running the Application" above)
+
+2. Run the E2E tests from the project root:
+```bash
+# Run all tests headlessly
+npm run test:e2e
+
+# Run tests with UI mode (recommended for development)
+npm run test:e2e:ui
+
+# Run tests in headed mode (see the browser)
+npm run test:e2e:headed
+
+# Run tests in debug mode
+npm run test:e2e:debug
+```
+
+The tests will verify that the theme toggle functionality works correctly across different browsers.
 
 ## Contributing
 
