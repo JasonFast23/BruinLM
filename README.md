@@ -75,6 +75,7 @@ npm install
 ```bash
 cd ..
 npm install
+npx playwright install
 ```
 
 This installs Playwright and its dependencies in the root directory for end-to-end testing.
