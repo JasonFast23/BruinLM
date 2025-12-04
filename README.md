@@ -118,17 +118,9 @@ This project uses Playwright for automated end-to-end testing. To run the tests:
 # Run all tests headlessly
 npm run test:e2e
 
-# Run tests with UI mode (recommended for development)
-npm run test:e2e:ui
-
-# Run tests in headed mode (see the browser)
-npm run test:e2e:headed
-
-# Run tests in debug mode
-npm run test:e2e:debug
 ```
 
-The tests will verify that the theme toggle functionality works correctly across different browsers.
+The tests will verify that the theme toggle functionality works correctly across different browsers and that file upload works correctly across different browsers.
 
 ## Contributing
 
