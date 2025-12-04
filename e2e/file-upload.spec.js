@@ -126,8 +126,8 @@ test.describe('File Upload E2E Tests', () => {
     // Check filename is displayed
     await expect(page.locator('text=test-file-metadata.pdf')).toBeVisible();
 
-    // Check uploader name is displayed (should be "Test User")
-    const uploaderText = page.locator('text=by Test User');
+    // Check uploader name is displayed (should be "Test User"). Use .first() to handle multiple matches
+    const uploaderText = page.locator('text=by Test User').first();
     await expect(uploaderText).toBeVisible();
   });
 
