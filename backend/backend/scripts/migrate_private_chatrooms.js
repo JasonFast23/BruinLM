@@ -1,3 +1,11 @@
+// Load environment variables from .env if dotenv is available
+const path = require('path');
+try {
+  require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+} catch (e) {
+  // dotenv not available, continue without it
+}
+
 const pool = require('../db');
 
 async function migratePrivateChatrooms() {

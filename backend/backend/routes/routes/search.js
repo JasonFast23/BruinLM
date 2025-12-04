@@ -14,7 +14,8 @@ router.get('/', authenticate, async (req, res) => {
   }
   
   try {
-    const searchPattern = `%${q.trim()}%`;
+    const searchQuery = q.trim();
+    const searchPattern = `%${searchQuery}%`;
     const userId = req.user.id;
     
     // Find matching classes - include ALL classes (both member and non-member)
@@ -48,7 +49,7 @@ router.get('/', authenticate, async (req, res) => {
     const documentContentResult = await pool.query(
       `SELECT DISTINCT d.id, d.filename, d.class_id, c.code as class_code, c.name as class_name,
               d.uploaded_at, u.name as uploader_name,
-              SUBSTRING(d.content FROM POSITION(LOWER($2) IN LOWER(d.content)) - 50 FOR 200) as content_preview
+              SUBSTRING(d.content FROM GREATEST(1, POSITION(LOWER($3) IN LOWER(d.content)) - 50) FOR 200) as content_preview
        FROM documents d
        INNER JOIN class_members cm ON d.class_id = cm.class_id
        INNER JOIN classes c ON d.class_id = c.id
@@ -59,7 +60,7 @@ router.get('/', authenticate, async (req, res) => {
          AND LENGTH(d.content) > 0
        ORDER BY d.uploaded_at DESC
        LIMIT 15`,
-      [userId, searchPattern]
+      [userId, searchPattern, searchQuery]
     );
     
     // Find matching chat messages in user's private chat rooms
@@ -67,7 +68,7 @@ router.get('/', authenticate, async (req, res) => {
       `SELECT DISTINCT cm.id, cm.message, cm.class_id, cm.is_ai, cm.created_at,
               c.code as class_code, c.name as class_name,
               u.name as user_name,
-              SUBSTRING(cm.message FROM POSITION(LOWER($2) IN LOWER(cm.message)) - 30 FOR 150) as message_preview
+              SUBSTRING(cm.message FROM GREATEST(1, POSITION(LOWER($3) IN LOWER(cm.message)) - 30) FOR 150) as message_preview
        FROM chat_messages cm
        INNER JOIN classes c ON cm.class_id = c.id
        LEFT JOIN users u ON cm.user_id = u.id
@@ -76,7 +77,7 @@ router.get('/', authenticate, async (req, res) => {
          AND cm.status = 'active'
        ORDER BY cm.created_at DESC
        LIMIT 20`,
-      [userId, searchPattern]
+      [userId, searchPattern, searchQuery]
     );
     
     res.json({

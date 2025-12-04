@@ -73,10 +73,22 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 5001;
 const server = require('http').createServer(app);
 const setupWebSocket = require('./websocket');
+const ensureSchema = require('./ensureSchema');
 
 // Set up WebSocket server
 setupWebSocket(server);
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Ensure database schema is up to date before starting server
+ensureSchema()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to ensure schema, starting server anyway:', err.message);
+    // Start server even if schema check fails
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT} (with schema warnings)`);
+    });
+  });

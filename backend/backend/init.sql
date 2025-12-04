@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   message TEXT NOT NULL,
   is_ai BOOLEAN DEFAULT false,
   status VARCHAR(20) DEFAULT 'active',
+  chat_owner_id INTEGER REFERENCES users(id),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT check_message_status CHECK (status IN ('active', 'cancelled', 'generating'))
 );
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS retrieval_analytics (
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_chat_messages_status ON chat_messages(status);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_owner ON chat_messages(class_id, chat_owner_id);
 CREATE INDEX IF NOT EXISTS documents_class_id_processed_idx ON documents(class_id, processing_status) WHERE processing_status = 'processed';
 CREATE INDEX IF NOT EXISTS document_chunks_document_id_idx ON document_chunks(document_id);
 
