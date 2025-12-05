@@ -4,8 +4,41 @@
  */
 
 import React, { useRef } from 'react';
-import { Upload, FileText, Trash2, Loader } from 'lucide-react';
+import { Upload, FileText, Trash2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+
+// Add wave animation CSS
+if (!document.getElementById('wave-loader-css')) {
+  const style = document.createElement('style');
+  style.id = 'wave-loader-css';
+  style.textContent = `
+    @keyframes wave {
+      0%, 60%, 100% {
+        transform: translateY(0);
+      }
+      30% {
+        transform: translateY(-8px);
+      }
+    }
+    .wave-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: white;
+      animation: wave 1.4s ease-in-out infinite;
+    }
+    .wave-dot:nth-child(1) {
+      animation-delay: 0s;
+    }
+    .wave-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    .wave-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 /**
  * FileSidebar component
@@ -41,7 +74,8 @@ function FileSidebar({
           fontSize: '1.125rem',
           fontWeight: '600',
           marginBottom: '1rem',
-          color: colors.text.primary
+          color: colors.text.primary,
+          textAlign: 'center'
         }}>
           Course Materials
         </h2>
@@ -51,9 +85,10 @@ function FileSidebar({
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: '0.5rem',
             width: '100%',
-            padding: '0.75rem',
+            padding: '1rem',
             background: '#2563eb',
             color: 'white',
             border: 'none',
@@ -61,6 +96,7 @@ function FileSidebar({
             cursor: isUploading ? 'not-allowed' : 'pointer',
             opacity: isUploading ? 0.5 : 1,
             fontWeight: '500',
+            fontSize: '0.9375rem',
             transition: 'all 0.2s ease'
           }}
           onMouseEnter={(e) => {
@@ -77,10 +113,11 @@ function FileSidebar({
           }}
         >
           {isUploading ? (
-            <>
-              <Loader className="animate-spin" size={16} />
-              Uploading...
-            </>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <div className="wave-dot"></div>
+              <div className="wave-dot"></div>
+              <div className="wave-dot"></div>
+            </div>
           ) : (
             <>
               <Upload size={16} />
@@ -137,9 +174,9 @@ function FileSidebar({
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
-                <FileText size={16} color="#2563eb" />
-                <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
+                <FileText size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
                   <p style={{
                     fontSize: '0.875rem',
                     fontWeight: '500',
@@ -167,7 +204,8 @@ function FileSidebar({
                   cursor: 'pointer',
                   color: '#ef4444',
                   borderRadius: '6px',
-                  transition: 'all 0.2s ease'
+                  transition: 'all 0.2s ease',
+                  flexShrink: 0
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';

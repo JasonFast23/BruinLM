@@ -79,14 +79,14 @@ function ClassRoom() {
     addSummaryMessage
   } = useChatState(classId);
 
-  // WebSocket handlers
-  const handleWSMessage = (data) => {
+  // WebSocket handlers - wrapped in useCallback to prevent unnecessary reconnections
+  const handleWSMessage = useCallback((data) => {
     if (data.is_ai) {
       setMessages(prev => [...prev, data]);
     }
-  };
+  }, [setMessages]);
 
-  const handleAIStart = (data) => {
+  const handleAIStart = useCallback((data) => {
     const newMessage = {
       id: data.id,
       message: '',
@@ -96,24 +96,24 @@ function ClassRoom() {
       streaming: true
     };
     setMessages(prev => [...prev, newMessage]);
-  };
+  }, [setMessages]);
 
-  const handleAIChunk = (messageId, char) => {
+  const handleAIChunk = useCallback((messageId, char) => {
     updateMessage(messageId, (msg) => ({
       ...msg,
       message: msg.message + char
     }));
-  };
+  }, [updateMessage]);
 
-  const handleAIComplete = (data) => {
+  const handleAIComplete = useCallback((data) => {
     updateMessage(data.id, (msg) => ({
       ...msg,
       streaming: false,
       message: data.fallback ? data.content : msg.message
     }));
-  };
+  }, [updateMessage]);
 
-  const handleGenerationStopped = () => {
+  const handleGenerationStopped = useCallback(() => {
     setMessages(prev => prev.map(msg => {
       if (msg.streaming) {
         return {
@@ -124,7 +124,7 @@ function ClassRoom() {
       }
       return msg;
     }));
-  };
+  }, [setMessages]);
 
   // WebSocket hook
   const {
