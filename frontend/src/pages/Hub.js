@@ -113,6 +113,9 @@ function Hub() {
     navigate('/');
   };
 
+  // classes available to join (recomputed on render when allClasses/myClasses change)
+  const availableToJoin = allClasses.filter(c => !myClasses.find(mc => mc.id === c.id));
+
   return (
     <div style={{ 
       minHeight: '100vh', 
@@ -445,7 +448,7 @@ function Hub() {
                               }}>
                                 <div style={{ 
                                   display: 'flex', 
-                                  alignItems: 'center', 
+                                  alignItems: 'center',
                                   gap: '1rem',
                                   flex: 1
                                 }}>
@@ -1156,69 +1159,99 @@ function Hub() {
               Join a Class
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {allClasses.filter(c => !myClasses.find(mc => mc.id === c.id)).map(cls => (
-                <div
-                  key={cls.id}
-                  style={{
-                    padding: '1rem',
-                    background: colors.secondary,
-                    border: `1px solid ${colors.border.primary}`,
-                    borderRadius: '8px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = colors.interactive.hover;
-                    e.currentTarget.style.borderColor = colors.border.secondary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = colors.secondary;
-                    e.currentTarget.style.borderColor = colors.border.primary;
-                  }}
-                >
-                  <div>
-                    <h3 style={{ 
-                      fontWeight: '600', 
-                      fontSize: '1rem',
-                      color: colors.text.primary,
-                      marginBottom: '0.25rem'
-                    }}>
-                      {cls.code}
-                    </h3>
-                    <p style={{ 
-                      fontSize: '0.85rem', 
-                      color: colors.text.secondary,
-                      fontWeight: '400'
-                    }}>
-                      {cls.name}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleJoinClass(cls.id)}
+              {availableToJoin.length === 0 ? (
+                <div style={{
+                  padding: '1rem',
+                  background: colors.secondary,
+                  border: `1px solid ${colors.border.primary}`,
+                  borderRadius: '8px'
+                }}>
+                  <p style={{ margin: 0, color: colors.text.secondary }}>
+                    There are no classes listed to join.{' '}
+                    <button
+                      onClick={() => { setShowJoinModal(false); setShowCreateModal(true); }}
+                      style={{
+                        display: 'inline-block',
+                        marginLeft: '0.5rem',
+                        padding: '0.35rem 0.6rem',
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      Create one
+                    </button>
+                  </p>
+                </div>
+              ) : (
+                availableToJoin.map(cls => (
+                  <div
+                    key={cls.id}
                     style={{
-                      padding: '0.5rem 1rem',
-                      background: '#10b981',
-                      color: 'white',
-                      border: 'none',
+                      padding: '1rem',
+                      background: colors.secondary,
+                      border: `1px solid ${colors.border.primary}`,
                       borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontWeight: '500',
-                      fontSize: '0.85rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
                       transition: 'all 0.2s ease'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#059669';
+                      e.currentTarget.style.background = colors.interactive.hover;
+                      e.currentTarget.style.borderColor = colors.border.secondary;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#10b981';
+                      e.currentTarget.style.background = colors.secondary;
+                      e.currentTarget.style.borderColor = colors.border.primary;
                     }}
                   >
-                    Join
-                  </button>
-                </div>
-              ))}
+                    <div>
+                      <h3 style={{ 
+                        fontWeight: '600', 
+                        fontSize: '1rem',
+                        color: colors.text.primary,
+                        marginBottom: '0.25rem'
+                      }}>
+                        {cls.code}
+                      </h3>
+                      <p style={{ 
+                        fontSize: '0.85rem', 
+                        color: colors.text.secondary,
+                        fontWeight: '400'
+                      }}>
+                        {cls.name}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleJoinClass(cls.id)}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        fontSize: '0.85rem',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#059669';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#10b981';
+                      }}
+                    >
+                      Join
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
             <button
               onClick={() => setShowJoinModal(false)}
